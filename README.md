@@ -7,9 +7,10 @@ workflow.
 Coraza WAF
 Auth0 and OIDC
 Kong gateway
-Kotlin / Spring Book
+Kotlin / Spring Boot
 Pulsar
 Docker / Kubernetes
+Typescript + React
 
 # AI
 I've been toying with the idea of restricting claude to `*.ai.*` files. Claude
@@ -20,3 +21,24 @@ will still be evident at commit time.
 # Steps
 
 # Claude
+
+
+# Typescript + React
+My wheelhouse. Just get something simple up.
+
+
+Scratchpad
+---
+
+# Kotlin
+Strongly typed JVM language. Stricter, simpler type system vs typescript. 
+Nominal typing vs structural. Multi-threaded vs event loop.
+
+# Spring Boot
+A layer on top of spring consisting of opinionated defaults, setup scripts,
+developer tools etc.
+
+# Gradle
+JVM build tool like npm. Script is kept in repo along with alternate versions
+for different platforms. Downloads gradle binary to `~/.gradle` if version
+does not currently exist. `gradlew tasks`, `gradlew test`, etc.
