@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "deny": ["Edit(**)", "Edit(!**/*.ai.*)"]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false
+  }
+}
