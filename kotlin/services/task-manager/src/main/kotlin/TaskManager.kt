@@ -1,11 +1,11 @@
-package com.example.demo
+package taskmanager
 
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
 @SpringBootApplication
-class DemoApplication
+class TaskManager
 
 fun main(args: Array<String>) {
-	runApplication<DemoApplication>(*args)
+	runApplication<TaskManager>(*args)
 }
