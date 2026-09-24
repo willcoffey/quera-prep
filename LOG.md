@@ -1,3 +1,7 @@
+# Thu Sep 24 12:58:24 PM EDT 2026
+Refactor the kotlin config in preparation of multiple services. Moved gradle 
+build stuff to root. Avoid duplication of config in every service.
+
 # Wed Sep 23 07:03:49 PM EDT 2026
 Reviewed and cleaned up some of the spring boot initialzer setup. Switching to
 first app being task manager.
