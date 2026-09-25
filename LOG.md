@@ -1,4 +1,41 @@
+# Fri Sep 25 02:46:54 PM EDT 2026
+Worked through the docker/podman setup enough to have an idea of how I want it
+to work. build works. Once multiple services exist either have per-service 
+overrides that use bootRun with file watching in the container, or a dev script
+that generates these files on request. 
+
+Very little optimization so far, will leave that till I've actually worked with
+enough with it to see what the bottlenecks are. Likely a lot of low hanging 
+fruit with docker setup. 
+
+
 # Thu Sep 24 12:58:24 PM EDT 2026
+vim setup
+coc-kotlin appears deprecated. setting up language server manually.
+
+download and untar the language server
+`~/.local/share$ curl -L https://download.jetbrains.com/language-server/kotlin-server/263.4702.0/kotlin-server-263.4702.0-aarch64.tar.gz | tar xz`
+add it to the path
+`ln -s ~/.local/share/kotlin-server-263.4702.0/bin/intellij-server ~/.local/bin/kotlin-lsp`
+update `coc-settings.json` to use the server.
+to language server block:
+```
+"kotlin": {
+  "command": "kotlin-lsp",
+  "args": ["--stdio"],
+  "filetypes": ["kotlin"],
+  "rootPatterns": ["settings.gradle.kts", "build.gradle.kts"]
+}
+```
+updated my `.vimrc` to add a format command
+`nnoremap <silent> Sk :call CocAction('format')<CR>`
+
+This allows for formatting `.kt` files, but does not work on `.kts` files.
+`ktfmt` functions as a standalone formatting tool that doesn't need the language
+server. Won't worry about that for now.
+
+---
+
 Refactor the kotlin config in preparation of multiple services. Moved gradle 
 build stuff to root. Avoid duplication of config in every service.
 

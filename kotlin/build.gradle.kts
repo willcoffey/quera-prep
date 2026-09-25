@@ -33,6 +33,10 @@ project(":services").subprojects {
   apply(plugin = "org.jetbrains.kotlin.plugin.spring")
   apply(plugin = "org.springframework.boot")
   apply(plugin = "io.spring.dependency-management")
+  // ensure consistant naming of the output jar
+  tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+    archiveFileName = "service.jar"
+  }
 
 configure<JavaPluginExtension> {
 	toolchain {

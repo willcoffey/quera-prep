@@ -1,0 +1,13 @@
+# Whitelist: ignore everything, then allow only what the image build needs.
+*
+
+# Gradle wrapper and shared build config
+!gradlew
+!gradle/
+!settings.gradle.kts
+!build.gradle.kts
+
+# Per-service sources and (future) per-service build files
+!services/*/src/
+!services/*/build.gradle.kts
+

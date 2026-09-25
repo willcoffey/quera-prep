@@ -1,0 +1,10 @@
+services:
+  task-manager:
+    image: localhost/task-manager:latest
+    build:
+      context: kotlin
+      args:
+        SERVICE: task-manager
+    ports:
+      - "8080:8080"
+
