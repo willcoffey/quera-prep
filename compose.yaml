@@ -1,10 +1,17 @@
 services:
+  # Gateway, only exposed service. Routes requests to services. Kong=nginx+openresty
+  kong:                                      
+    image: docker.io/library/kong:3.9
+    environment:                             
+      KONG_DATABASE: "off"                   
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml  
+    volumes:                                 
+      - ./kong/kong.yml:/kong/kong.yml:ro    
+    ports:                                   
+      - "8000:8000"                          
   task-manager:
     image: localhost/task-manager:latest
     build:
       context: kotlin
       args:
         SERVICE: task-manager
-    ports:
-      - "8080:8080"
-
