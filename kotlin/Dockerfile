@@ -1,3 +1,8 @@
+# --- DEV STAGE ---
+FROM docker.io/eclipse-temurin:21-jdk AS dev
+WORKDIR /workspace
+ENV GRADLE_USER_HOME=/gradle
+
 # --- BUILD STAGE ---
 FROM docker.io/eclipse-temurin:21-jdk AS build
 ARG SERVICE

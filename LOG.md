@@ -1,3 +1,13 @@
+# Mon Sep 28 09:43:25 AM EDT 2026
+Working on developer experience.
+Created a script to handle the podman compose override files, so you can just
+get started development with a single command.
+
+Had the script also save a rolling log to `.dev/` but after more work this is 
+likely not needed. `podman` already has good options for viewing logs. I'm 
+keeping it for now since my current claude setup sandboxes it in such a way that
+it can't run commands but can easily read the file.
+
 # Fri Sep 25 02:46:54 PM EDT 2026
 Worked through the docker/podman setup enough to have an idea of how I want it
 to work. build works. Once multiple services exist either have per-service 
