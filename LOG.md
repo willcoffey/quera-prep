@@ -1,3 +1,41 @@
+# Thu Oct  1 01:04:19 PM EDT 2026
+Launching claude in a nested directory inside the repo means it doesn't use the
+repo root claude settings. so no sandbox.
+
+# Thu Oct  1 08:29:14 AM EDT 2026
+On a flight, no internet and only the Kotlin reference PDF. Let's see what I 
+can do.
+- need to review my REST stuff. POST vs PUT.
+- Build is taking way to long, 34s for build + another like 30s for spring boot
+to come up. Not using cache? Also need to document expectations. i.e. old 
+service is still up after a compile issue, should be down until fixed.
+- Don't have Spring docs, @PostMapping causes error. maybe function needs args?
+- A curl request to `/tasks/notAnEndpoint` throws a  
+```
+{
+  "timestamp": "2026-10-01T12:58:57.421Z",
+  "status": 404,
+  "error": "Not Found",
+  "trace": "...",
+  "message": "No static resource creates.",
+  "path": "/creates"
+}
+```
+with a stack trace. surprised it defaults to exposing this much info.
+- I think dev.ai.sh / gradle might be buidling on every change, and not
+canceling, leading to massive performance issues when making rapid changes.
+
+
+
+Next steps:
+postgres setup
+endpoints on task-manager service
+ - create job
+ - job status
+ - job results
+ - task manager status
+
+
 # Mon Sep 28 09:43:25 AM EDT 2026
 Working on developer experience.
 Created a script to handle the podman compose override files, so you can just

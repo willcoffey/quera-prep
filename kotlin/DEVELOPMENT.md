@@ -19,6 +19,11 @@ changes.
 In a second terminal, attach to the target service for viewing output only
 `podman compose logs -f task-manager`
 
+# Curl an endpoint
+Endpoints have there roots defined insinde the `kong.yml` file, which defines a
+root for the service. For task-manager it is currently "tasks", so to curl it.
+`curl localhost:8000/tasks/endpointName`
+
 
 # Add a service
 1. Copy an existing service, then refactor it's namings.
