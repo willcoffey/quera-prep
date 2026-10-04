@@ -49,14 +49,14 @@ mkdir -p "$OVERRIDE_DIR"
 #   DEV_CLIENT_JVM  both gradlew clients, which only relay output
 #   DEV_WATCH_JVM   continuous build daemon, also compiles kotlin in process
 #   DEV_RUN_JVM     bootRun daemon, idles while the app runs
-#   DEV_APP_JVM     the app, only via bootRun's jvmArgs
+# The app itself takes JAVA_TOOL_OPTIONS from compose.yaml, same as prod-like
+# runs. The gradle JVMs see it too, but their own flags take precedence.
 : "${DEV_WATCH_JVM:=-Xms64m -Xmx384m -XX:MaxMetaspaceSize=512m \
 -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=128m}"
 : "${DEV_CLIENT_JVM:=-Xms16m -Xmx64m -XX:+UseSerialGC \
 -XX:TieredStopAtLevel=1}"
 : "${DEV_RUN_JVM:=-Xms64m -Xmx160m -XX:MaxMetaspaceSize=384m \
 -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
-: "${DEV_APP_JVM:=-Xms32m -Xmx192m -XX:+UseSerialGC}"
 
 # Paths are absolute so they don't depend on how the compose provider resolves
 # relative paths in secondary -f files.
@@ -92,7 +92,6 @@ services:
       DEV_WATCH_JVM: "$DEV_WATCH_JVM"
       DEV_CLIENT_JVM: "$DEV_CLIENT_JVM"
       DEV_RUN_JVM: "$DEV_RUN_JVM"
-      DEV_APP_JVM: "$DEV_APP_JVM"
 EOF
 cat >> "$OVERRIDE" <<'EOF'
     entrypoint: ["bash", "-c"]
@@ -121,8 +120,7 @@ cat >> "$OVERRIDE" <<'EOF'
           kill -0 $$! 2>/dev/null || exit 1
           sleep 1
         done
-        gradle "$$DEV_CLIENT_JVM" "$$DEV_RUN_JVM" \
-          -PdevAppJvmArgs="$$DEV_APP_JVM" $$p:bootRun &
+        gradle "$$DEV_CLIENT_JVM" "$$DEV_RUN_JVM" $$p:bootRun &
         wait -n
         echo "[dev] a gradle process exited, stopping $$DEV_SERVICE" >&2
         exit 1
@@ -221,7 +219,6 @@ if (devProject != null) allprojects {
     val triggerDir = layout.buildDirectory.dir("dev/trigger")
     val triggerFile = triggerDir.map { it.file("restart.trigger") }
     val session = providers.gradleProperty("devSession").getOrElse("")
-    val appJvmArgs = providers.gradleProperty("devAppJvmArgs").getOrElse("")
     val sources = layout.projectDirectory.dir("src/main").asFile
     val startedFile = layout.buildDirectory.file("dev/started")
 
@@ -277,7 +274,6 @@ if (devProject != null) allprojects {
           configurations["runtimeClasspath"]
         systemProperty(
           "spring.devtools.restart.trigger-file", "restart.trigger")
-        jvmArgs(appJvmArgs.split(" ").filter(String::isNotBlank))
         standardOutput = AppOutput(triggerFile.get().asFile,
           startedFile.get().asFile, session)
       }

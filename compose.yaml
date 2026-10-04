@@ -5,6 +5,7 @@ services:
     environment:                             
       KONG_DATABASE: "off"                   
       KONG_DECLARATIVE_CONFIG: /kong/kong.yml  
+      KONG_NGINX_WORKER_PROCESSES: "1"
     volumes:                                 
       - ./kong/kong.yml:/kong/kong.yml:ro    
     ports:                                   
@@ -15,3 +16,5 @@ services:
       context: kotlin
       args:
         SERVICE: task-manager
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx128m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
