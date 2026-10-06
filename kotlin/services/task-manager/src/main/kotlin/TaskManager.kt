@@ -26,6 +26,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 
 // Database related imports
+import org.springframework.transaction.annotation.Transactional
 import org.springframework.jdbc.core.simple.JdbcClient
 import kotlin.jvm.optionals.getOrNull
 
@@ -43,68 +44,79 @@ class Endpoints(
     private val db: JdbcClient,
     private val json: ObjectMapper
 ) {
+
     /**
-     * Create a task
+     * Creates a task and queues it for publishing. Idempotent on idemKey.
      *
-     * currently does not verify identical tasks on idempotent key collision.
-     * silently returns existing id.
-     *
-     * Returns
-     *    msg : string - Human readable
-     *    data
-     *      taskId : Long - The id of the task
+     * 201 - task created
+     * 200 - identical task already exists, returns its id
+     * 409 - idemKey already used by a task with different commands
+     * 400 - invalid input
+     * Returns APIResponse<{
+     *  taskId: number;
+     * }>
      */
     @PostMapping("/create")
+    @Transactional
     fun create(@Valid @RequestBody input: CreateTaskBody): ResponseEntity<APIResponse<TaskId>> {
-        /*
-         * Insert the new task if it doesn't already exist, returning the id 
-         * after postgres generates it. If it does exist already, query for the
-         * existing id and return it.
-         */
-        val id: Long? = db
+        val (taskId, existing) = insertOrFind(input)
+        if (existing == null) {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                .body(APIResponse("Task accepted", TaskId(taskId)))
+        } else if (existing == input.commands) {
+            return ResponseEntity.status(HttpStatus.OK)
+                .body(APIResponse("Task already exists", TaskId(taskId)))
+        } else {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "idemKey used by a different task")
+        }
+    }
+
+    /**
+     * Inserts task + outbox or finds the existing task
+     * Relies on being called from a @Transactional spring function
+     */
+    private fun insertOrFind(input: CreateTaskBody): InsertResult {
+        val id = db
             .sql(
                 """
             INSERT INTO task (idem_key, body)
             VALUES (:idem_key, :body::jsonb)
             ON CONFLICT (idem_key) DO NOTHING
-            RETURNING id
+            RETURNING task_id
             """
             )
             .param("idem_key", input.idemKey)
             .param("body", json.writeValueAsString(input.commands))
-            .query(Long::class.java).optional().orElse(null)
+            .query(Long::class.java)
+            .optional().getOrNull()
 
-        if (id == null) {
-            // The record already exists, load it
-            val existingId = db
+        //  If the task does not yet exist
+        if (id != null) {
+            db.sql("INSERT INTO outbox (task_id) VALUES (:task_id)")
+                .param("task_id", id)
+                .update()
+            return InsertResult(id, null)
+        } else {
+            val (existingId, body) = db
                 .sql(
                     """
-                  SELECT task_id FROM task WHERE
-                  idem_key = :idem_key
+                SELECT task_id, body
+                FROM task
+                WHERE idem_key = :idem_key
                 """
                 )
                 .param("idem_key", input.idemKey)
-                .query(Long::class.java).optional().orElse(null)
-            if (existingId == null) {
-                throw ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Request appeared to be duplicate, but existing record couldn't be found"
-                )
-            } else {
-                return ResponseEntity.status(HttpStatus.OK)
-                    .body(
-                        APIResponse<TaskId>(
-                            msg = "Task previously processed, returning existing id",
-                            data = TaskId(existingId)
-                        )
-                    )
-            }
-        } else {
-            // The record was just added, return its id
-            return ResponseEntity.status(HttpStatus.CREATED)
-                .body(APIResponse<TaskId>(msg = "Added task to job queue", data = TaskId(id)))
+                .query({ rs, _ -> rs.getLong(1) to rs.getString(2) })
+                .single()
+            return InsertResult(
+                existingId,
+                json.readValue(body, Array<String>::class.java).toList()
+            )
         }
     }
+
+    private data class InsertResult(val taskId: Long, val existingCommands: List<String>?)
+
 
     /**
      * Inspects the status of a task.

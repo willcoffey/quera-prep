@@ -7,7 +7,13 @@ making each message contain the job, but this results in excessive data,
 especially for long term pulsar retention.  
 
 - I'm not intending to paginate task results. Once I have a prototype I'll just
-make a max runs that maps to a reasonable balue.
+make a max runs that maps to a reasonable value.
+
+# Tue Oct  6 02:26:45 PM EDT 2026
+Refactored endpoints and have reached an acceptable code style. Long term to 
+look into style guides and linters.
+
+Next step is pulsar install and configure, outbox sender, completion endpoint.
 
 # Mon Oct  5 08:25:50 PM EDT 2026
 Worked on fleshing out the task creation. Avoided using the DO UPDATE conflict
