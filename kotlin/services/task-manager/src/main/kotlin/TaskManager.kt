@@ -8,6 +8,7 @@ import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.Pattern
+import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 
 // Annotations for endpoints
@@ -15,8 +16,10 @@ import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.PathVariable
 
 //Imports for http and json related processing
+import tools.jackson.databind.JsonNode
 import tools.jackson.databind.ObjectMapper
 import org.springframework.http.ResponseEntity
 import org.springframework.http.HttpStatus
@@ -24,15 +27,14 @@ import org.springframework.web.server.ResponseStatusException
 
 // Database related imports
 import org.springframework.jdbc.core.simple.JdbcClient
+import kotlin.jvm.optionals.getOrNull
 
-/**
- * annotation
- * a constant value attached to the TaskManager class. Can be stripped at
- * compile time. Kinda like doing someFunction.idempotent = true in js.
- *
- * This one:
- * Marks this as the main app class
- */
+// JVM entry point
+fun main(args: Array<String>) {
+    /** Starts all the magical spring auto-config etc */
+    runApplication<TaskManager>(*args)
+}
+
 @SpringBootApplication
 class TaskManager
 
@@ -45,15 +47,15 @@ class Endpoints(
      * Create a task
      *
      * currently does not verify identical tasks on idempotent key collision.
-     * silently returns existing key.
+     * silently returns existing id.
      *
      * Returns
      *    msg : string - Human readable
-     *    result
-     *      id : Long - The id of the task
+     *    data
+     *      taskId : Long - The id of the task
      */
     @PostMapping("/create")
-    fun create(@Valid @RequestBody input: CreateTaskBody): ResponseEntity<CreateTaskResponse> {
+    fun create(@Valid @RequestBody input: CreateTaskBody): ResponseEntity<APIResponse<TaskId>> {
         /*
          * Insert the new task if it doesn't already exist, returning the id 
          * after postgres generates it. If it does exist already, query for the
@@ -77,7 +79,7 @@ class Endpoints(
             val existingId = db
                 .sql(
                     """
-                  SELECT id FROM task WHERE
+                  SELECT task_id FROM task WHERE
                   idem_key = :idem_key
                 """
                 )
@@ -91,42 +93,83 @@ class Endpoints(
             } else {
                 return ResponseEntity.status(HttpStatus.OK)
                     .body(
-                        CreateTaskResponse(
+                        APIResponse<TaskId>(
                             msg = "Task previously processed, returning existing id",
-                            result = CreateTaskResponse.Result(existingId)
+                            data = TaskId(existingId)
                         )
                     )
             }
         } else {
             // The record was just added, return its id
             return ResponseEntity.status(HttpStatus.CREATED)
-                .body(CreateTaskResponse(msg = "Added task to job queue", result = CreateTaskResponse.Result(id)))
+                .body(APIResponse<TaskId>(msg = "Added task to job queue", data = TaskId(id)))
         }
     }
-    //*************************************************************************
 
     /**
-     * Returns
-     *  status field from the database
-     *  not in database
+     * Inspects the status of a task.
+     *
+     * 404 - task does not exist
+     * Returns APIResponse<{
+     *  taskId: number;
+     *  complete: boolean;
+     * }>
      */
-    @GetMapping("/status")
-    fun status(): String {
-        // Query the database for status
-        return "string"
+    @GetMapping("/status/{taskId}")
+    fun status(@PathVariable @Positive taskId: Long): APIResponse<TaskStatus> {
+        val task = db
+            .sql(
+                """
+            SELECT complete_runs, requested_runs
+            FROM task
+            WHERE task_id = :taskId
+            """
+            )
+            .param("taskId", taskId)
+            .query({ rs, _ -> rs.getInt(1) to rs.getInt(2) })
+            .optional()
+            .getOrNull()
+
+        if (task == null)
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Task $taskId not found")
+
+        val (complete, requested) = task
+        return APIResponse(
+            msg = "$complete of $requested runs complete",
+            data = TaskStatus(taskId, complete >= requested)
+        )
     }
 
-    @GetMapping("/results")
-    fun results(): Boolean {
-        // query the db, return result or error
-        return true;
-    }
-}
+    /**
+     * Loads task run results as an array.
+     *
+     * 404 - task does not exist
+     * Returns APIResponse<any[]>
+     */
+    @GetMapping("/results/{taskId}")
+    fun results(@PathVariable @Positive taskId: Long): APIResponse<List<JsonNode>> {
+        val rows = db
+            .sql(
+                """
+            SELECT run.result
+            FROM task
+            LEFT JOIN run USING (task_id)
+            WHERE task.task_id = :taskId
+            ORDER BY run.run_idx
+            """
+            )
+            .param("taskId", taskId)
+            .query(String::class.java)
+            .list()
 
-// JVM entry point
-fun main(args: Array<String>) {
-    /** Starts all the magical spring auto-config etc */
-    runApplication<TaskManager>(*args)
+        if (rows.isEmpty())
+            throw ResponseStatusException(
+                HttpStatus.NOT_FOUND,
+                "Task $taskId not found"
+            )
+        val runs = rows.filterNotNull().map(json::readTree)
+        return APIResponse("Retrieved results", runs)
+    }
 }
 
 data class CreateTaskBody(
@@ -137,9 +180,6 @@ data class CreateTaskBody(
     val commands: List<@NotBlank @Size(max = 64) String>
 )
 
-data class CreateTaskResponse(
-    val msg: String,
-    val result: Result
-) {
-    data class Result(val id: Long)
-}
+data class APIResponse<T>(val msg: String, val data: T)
+data class TaskId(val taskId: Long)
+data class TaskStatus(val taskId: Long, val complete: Boolean)

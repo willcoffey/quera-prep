@@ -1,3 +1,14 @@
+# Current Summary
+Starting work on kotlin services, and will be leaving a lot of rough edges to 
+get a prototype. These I'm leaving for later
+
+- I intend to use pulsar for buffering jobs on workers. Its easiest to do it by
+making each message contain the job, but this results in excessive data, 
+especially for long term pulsar retention.  
+
+- I'm not intending to paginate task results. Once I have a prototype I'll just
+make a max runs that maps to a reasonable balue.
+
 # Mon Oct  5 08:25:50 PM EDT 2026
 Worked on fleshing out the task creation. Avoided using the DO UPDATE conflict
 resolution as it seems hacky.

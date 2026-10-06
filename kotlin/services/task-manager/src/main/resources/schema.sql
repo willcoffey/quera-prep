@@ -1,12 +1,26 @@
 CREATE TABLE IF NOT EXISTS task (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    idem_key    TEXT NOT NULL UNIQUE,
-    body        JSONB, 
-    status      TEXT NOT NULL DEFAULT 'queued'
-                CHECK (status IN ('queued', 'in_progress', 'complete', 'failed', 'canceled')),
-    result      JSONB,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  task_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  idem_key TEXT NOT NULL UNIQUE,
+  body JSONB,
+  requested_runs INT NOT NULL DEFAULT 1000,
+  complete_runs INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now ()
 );
-CREATE INDEX IF NOT EXISTS task_queued_idx ON task (created_at) WHERE status = 'queued';
 
+/**
+ * Outbox required to guarantee at least once delivery.
+ * Entries deleted after pulsar ack
+ */
+CREATE TABLE IF NOT EXISTS outbox (
+  task_id BIGINT PRIMARY KEY REFERENCES task (task_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now ()
+);
+
+/** A record of all runs that have been executed */
+CREATE TABLE IF NOT EXISTS run (
+  run_idx INT NOT NULL,
+  task_id BIGINT NOT NULL REFERENCES task (task_id),
+  result JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now (),
+  PRIMARY KEY (task_id, run_idx)
+);
