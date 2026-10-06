@@ -3,4 +3,5 @@
 *.sw?
 build/
 .dev/
+.env
 

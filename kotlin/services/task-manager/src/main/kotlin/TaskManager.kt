@@ -1,20 +1,30 @@
 package taskmanager
-
-/**
- * Framework imports. will be part of any service.
- * global gradle cache, should be in ~/.gradle/
- * Maven is a build tool like gradle, but also a registry of packages. 
- * gradle pulls from Maven Central.
- *
- * dependencies in build.gradle.kts
- * 
- */
+// Universal spring imports
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
 
-/** Specific imports for rest stuff */
+// Input validation
+import jakarta.validation.Valid
+import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotEmpty
+import jakarta.validation.constraints.Pattern
+import jakarta.validation.constraints.Size
+
+// Annotations for endpoints
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+
+//Imports for http and json related processing
+import tools.jackson.databind.ObjectMapper
+import org.springframework.http.ResponseEntity
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
+
+// Database related imports
+import org.springframework.jdbc.core.simple.JdbcClient
+
 /**
  * annotation
  * a constant value attached to the TaskManager class. Can be stripped at
@@ -27,77 +37,109 @@ import org.springframework.web.bind.annotation.RestController
 class TaskManager
 
 @RestController
-class Endpoints {
-  /**
-   * Expose this function to /alive path. typical pattern is to return a 
-   * data class, which is similar to returning JSON object
-   *
-   * @TODO - Remove this initial test function after reviewing actuator and 
-   * standard monitoring functions
-   */
-  @GetMapping("/alive")
-  fun alive(): Boolean {
-    return true
-  }
+class Endpoints(
+    private val db: JdbcClient,
+    private val json: ObjectMapper
+) {
+    /**
+     * Create a task
+     *
+     * currently does not verify identical tasks on idempotent key collision.
+     * silently returns existing key.
+     *
+     * Returns
+     *    msg : string - Human readable
+     *    result
+     *      id : Long - The id of the task
+     */
+    @PostMapping("/create")
+    fun create(@Valid @RequestBody input: CreateTaskBody): ResponseEntity<CreateTaskResponse> {
+        /*
+         * Insert the new task if it doesn't already exist, returning the id 
+         * after postgres generates it. If it does exist already, query for the
+         * existing id and return it.
+         */
+        val id: Long? = db
+            .sql(
+                """
+            INSERT INTO task (idem_key, body)
+            VALUES (:idem_key, :body::jsonb)
+            ON CONFLICT (idem_key) DO NOTHING
+            RETURNING id
+            """
+            )
+            .param("idem_key", input.idemKey)
+            .param("body", json.writeValueAsString(input.commands))
+            .query(Long::class.java).optional().orElse(null)
 
-  /**
-   * Create a task.
-   * This should:
-   *  require an idempotent key defined by the client
-   *  return a task id that can be used to query status
-   *  add the task to a jobs queue
-   */
-  @GetMapping("/create")
-  fun create() : String {
-    val input = CreateTaskBody("placeholder", listOf(
-      "SELECT 1",
-      "H",
-      "SELECT 1 2 3",
-      "CNOT",
-      "SELECT 3 2",
-      "T"
-    ))
+        if (id == null) {
+            // The record already exists, load it
+            val existingId = db
+                .sql(
+                    """
+                  SELECT id FROM task WHERE
+                  idem_key = :idem_key
+                """
+                )
+                .param("idem_key", input.idemKey)
+                .query(Long::class.java).optional().orElse(null)
+            if (existingId == null) {
+                throw ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "Request appeared to be duplicate, but existing record couldn't be found"
+                )
+            } else {
+                return ResponseEntity.status(HttpStatus.OK)
+                    .body(
+                        CreateTaskResponse(
+                            msg = "Task previously processed, returning existing id",
+                            result = CreateTaskResponse.Result(existingId)
+                        )
+                    )
+            }
+        } else {
+            // The record was just added, return its id
+            return ResponseEntity.status(HttpStatus.CREATED)
+                .body(CreateTaskResponse(msg = "Added task to job queue", result = CreateTaskResponse.Result(id)))
+        }
+    }
+    //*************************************************************************
 
-    // Check the idempotence key, how to handle idempotence key?
-    // make it use date.now(), reject anything that has an old enough key and
-    // just keep it in memory?
-    
-    // Put the task into the postgres, have postgres generate the task id
-    // Return to user
-    return input.toString()
-  }
+    /**
+     * Returns
+     *  status field from the database
+     *  not in database
+     */
+    @GetMapping("/status")
+    fun status(): String {
+        // Query the database for status
+        return "string"
+    }
 
-  /**
-   * Check the status of a task
-   * status should be one of
-   *  queued
-   *  in progress
-   *  complete
-   *  canceled
-   *  unknown id
-   */
-  @GetMapping("/status")
-  fun status() : String {
-    // query the db, return the result
-    return "string"
-  }
-
-  @GetMapping("/results")
-  fun results() : Boolean {
-    // query the db, return result or error
-    return true;
-  }
+    @GetMapping("/results")
+    fun results(): Boolean {
+        // query the db, return result or error
+        return true;
+    }
 }
-
 
 // JVM entry point
 fun main(args: Array<String>) {
-  /** Starts all the magical spring auto-config etc */
-	runApplication<TaskManager>(*args)
+    /** Starts all the magical spring auto-config etc */
+    runApplication<TaskManager>(*args)
 }
 
-data class CreateTaskBody (
-  val idem_key: String,
-  val commands: List<String>
+data class CreateTaskBody(
+    @field:Pattern(regexp = "[A-Za-z0-9]{64}", message = "Invalid idemKey submitted")
+    val idemKey: String,
+    @field:NotEmpty
+    @field:Size(max = 1000)
+    val commands: List<@NotBlank @Size(max = 64) String>
 )
 
+data class CreateTaskResponse(
+    val msg: String,
+    val result: Result
+) {
+    data class Result(val id: Long)
+}

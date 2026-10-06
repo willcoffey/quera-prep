@@ -6,10 +6,22 @@ services:
       KONG_DATABASE: "off"                   
       KONG_DECLARATIVE_CONFIG: /kong/kong.yml  
       KONG_NGINX_WORKER_PROCESSES: "1"
+      KONG_NGINX_PROXY_CLIENT_MAX_BODY_SIZE: "128k"
     volumes:                                 
       - ./kong/kong.yml:/kong/kong.yml:ro    
     ports:                                   
       - "8000:8000"                          
+  # Database
+  postgres:
+    image: docker.io/library/postgres:18
+    environment:
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?}
+      TASK_MANAGER_DB_PASSWORD: ${TASK_MANAGER_DB_PASSWORD:?}
+    volumes:
+      # Contains the actual database
+      - pgdata:/var/lib/postgresql
+      # bind mount pointing to  init scripts, only run when pgdata is empty
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
   task-manager:
     image: localhost/task-manager:latest
     build:
@@ -18,3 +30,11 @@ services:
         SERVICE: task-manager
     environment:
       JAVA_TOOL_OPTIONS: "-Xmx128m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/task_manager
+      SPRING_DATASOURCE_USERNAME: task_manager
+      SPRING_DATASOURCE_PASSWORD: ${TASK_MANAGER_DB_PASSWORD:?}
+      SPRING_SQL_INIT_MODE: always
+    depends_on: [postgres]
+    restart: on-failure
+volumes:
+  pgdata: {}

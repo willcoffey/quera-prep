@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the full stack with one kotlin service in dev mode (gradle + hot reload).
 #
-# usage: ./dev.ai.sh <service> [extra `compose up` args]
+# usage: ./dev.ai.sh <service> [--delete-db] [extra `compose up` args]
 #
 # Generates .dev/compose.<service>.yaml, an override that swaps the service's
 # image for the Dockerfile `dev` stage, bind mounts the kotlin source, and runs
@@ -16,9 +16,27 @@
 if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
 set -euo pipefail
 
+help() {
+  cat <<EOF
+    Dev Stack Runner
+    Runs the full stack with one kotlin service in dev mode, hot reloading on
+    source changes. Compose output is appended to .dev/podman.log.
+    Usage: $0 [SERVICE] [OPTIONS]...
+
+    -h --help Print this help
+    --delete-db Drop and recreate the service's postgres database before
+      starting. The app recreates its tables from schema.sql.
+
+    Services: $(ls "$ROOT/kotlin/services" | tr '\n' ' ')
+
+    ================================ Examples ================================
+    $0 task-manager               Start the stack, task-manager in dev mode
+    $0 task-manager --delete-db   Same, on a fresh task-manager database
+EOF
+}
+
 usage() {
-  echo "usage: $0 <service> [compose up args...]" >&2
-  echo "services: $(ls "$ROOT/kotlin/services" | tr '\n' ' ')" >&2
+  help >&2
   exit 1
 }
 
@@ -26,8 +44,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE="${COMPOSE:-podman compose}"
 
 [[ $# -ge 1 ]] || usage
+for arg in "$@"; do
+  if [[ "$arg" == -h || "$arg" == --help ]]; then help; exit 0; fi
+done
 SERVICE="$1"
 shift
+
+# Pull our own flags out, the rest go to `compose up`.
+DELETE_DB=false
+UP_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --delete-db) DELETE_DB=true ;;
+    *) UP_ARGS+=("$arg") ;;
+  esac
+done
 
 if [[ ! -d "$ROOT/kotlin/services/$SERVICE" ]]; then
   echo "error: no service dir kotlin/services/$SERVICE" >&2
@@ -36,6 +67,10 @@ fi
 if ! grep -qE "^  $SERVICE:" "$ROOT/compose.yaml"; then
   echo "error: service '$SERVICE' not defined in compose.yaml" >&2
   exit 1
+fi
+if $DELETE_DB; then
+  read -r -p "Delete the ${SERVICE//-/_} database? [y/N] " answer
+  [[ "$answer" == y || "$answer" == Y ]] || { echo "aborted" >&2; exit 1; }
 fi
 
 OVERRIDE_DIR="$ROOT/.dev"
@@ -313,6 +348,29 @@ cd "$ROOT"
 # shellcheck disable=SC2086
 $COMPOSE -f compose.yaml -f "$OVERRIDE" build "$SERVICE"
 
+# Database and role are named after the service, see postgres/init. Only the
+# database is recreated, the role and its password are kept. DROP DATABASE
+# can't run in a transaction, hence one -c per statement.
+if $DELETE_DB; then
+  DB="${SERVICE//-/_}"
+  # shellcheck disable=SC2086
+  $COMPOSE -f compose.yaml -f "$OVERRIDE" stop "$SERVICE" 2>/dev/null || true
+  # shellcheck disable=SC2086
+  $COMPOSE -f compose.yaml -f "$OVERRIDE" up -d postgres
+  echo "[dev] waiting for postgres"
+  # shellcheck disable=SC2086
+  until $COMPOSE -f compose.yaml -f "$OVERRIDE" exec -T postgres \
+    pg_isready -q -U postgres; do
+    sleep 1
+  done
+  echo "[dev] deleting database $DB"
+  # shellcheck disable=SC2086
+  $COMPOSE -f compose.yaml -f "$OVERRIDE" exec -T postgres \
+    psql -v ON_ERROR_STOP=1 -U postgres \
+    -c "DROP DATABASE IF EXISTS \"$DB\" WITH (FORCE)" \
+    -c "CREATE DATABASE \"$DB\" OWNER \"$DB\""
+fi
+
 # No exec here, the script has to outlive `up` to stop the log follower.
 #
 # set -m starts the follower in its own process group, so one kill reaches the
@@ -326,4 +384,4 @@ set +m
 trap 'kill -- -"$LOGGER" 2>/dev/null' EXIT
 echo "compose output: ${LOG#"$ROOT"/}"
 # shellcheck disable=SC2086
-$COMPOSE -f compose.yaml -f "$OVERRIDE" up "$@"
+$COMPOSE -f compose.yaml -f "$OVERRIDE" up "${UP_ARGS[@]}"

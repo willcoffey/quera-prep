@@ -1,3 +1,31 @@
+# Mon Oct  5 08:25:50 PM EDT 2026
+Worked on fleshing out the task creation. Avoided using the DO UPDATE conflict
+resolution as it seems hacky.
+
+Code is ugly till I get familiar enough with kotlin style. Also need to define
+the command format before I can write a regex to validate it.
+
+Used standard nginx config for doing request size filtering. via kong env 
+override
+
+familiarized myself with jakarta validation. which is much better than 
+typescript style.
+
+misc dev env changes.
+
+
+
+# Sun Oct  4 08:35:34 PM EDT 2026
+Did some work on the dev environment as well as getting postgres setup. For the
+dev environment, mainly focused on getting the edit loop faster and memory usage
+down. Claude made optimizations to the `dev.ai.sh` script and I added JVM memory
+limits for the services.
+
+For postgres, the setup is as follows:
+a single postgres container that contains per-service databases with per-service
+roles. passwords are stored in a gitignored .env file. A postgres init script is
+run, only when the volume is initially created. 
+
 # Thu Oct  1 01:04:19 PM EDT 2026
 Launching claude in a nested directory inside the repo means it doesn't use the
 repo root claude settings. so no sandbox.
