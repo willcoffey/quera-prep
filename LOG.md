@@ -10,6 +10,11 @@ especially for long term pulsar retention.
 make a max runs that maps to a reasonable value.
 
 # Tue Oct  6 02:26:45 PM EDT 2026
+Got pulsar installed and added a means to expose it to localhost so llm can 
+access the broker.
+
+---
+
 Refactored endpoints and have reached an acceptable code style. Long term to 
 look into style guides and linters.
 
