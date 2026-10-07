@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS task (
  */
 CREATE TABLE IF NOT EXISTS outbox (
   task_id BIGINT PRIMARY KEY REFERENCES task (task_id),
+  body JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now ()
 );
 

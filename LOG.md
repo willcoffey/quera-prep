@@ -1,10 +1,15 @@
 # Current Summary
+## Task List
+ - Get task-manager fully prototyped with pulsar and job receival.
+ - Job runner with typescript port
+
+---
+
 Starting work on kotlin services, and will be leaving a lot of rough edges to 
 get a prototype. These I'm leaving for later
 
-- I intend to use pulsar for buffering jobs on workers. Its easiest to do it by
-making each message contain the job, but this results in excessive data, 
-especially for long term pulsar retention.  
+- I'm buffering entire tasks, not individual runs. Could lead to single tasks
+blocking if they take a long time.
 
 - I'm not intending to paginate task results. Once I have a prototype I'll just
 make a max runs that maps to a reasonable value.

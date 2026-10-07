@@ -24,11 +24,18 @@ import tools.jackson.databind.ObjectMapper
 import org.springframework.http.ResponseEntity
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
+import tools.jackson.module.kotlin.readValue
 
 // Database related imports
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.jdbc.core.simple.JdbcClient
 import kotlin.jvm.optionals.getOrNull
+
+// Pulsar
+import org.springframework.scheduling.annotation.EnableScheduling
+import org.springframework.scheduling.annotation.Scheduled
+import org.springframework.pulsar.annotation.PulsarMessage
+import org.springframework.pulsar.core.PulsarTemplate
 
 // JVM entry point
 fun main(args: Array<String>) {
@@ -37,12 +44,14 @@ fun main(args: Array<String>) {
 }
 
 @SpringBootApplication
+@EnableScheduling
 class TaskManager
 
 @RestController
 class Endpoints(
     private val db: JdbcClient,
-    private val json: ObjectMapper
+    private val json: ObjectMapper,
+    private val pulsar: PulsarTemplate<Any>
 ) {
 
     /**
@@ -72,10 +81,43 @@ class Endpoints(
     }
 
     /**
+     * Runs every 500ms automatically, reads values from the outbox and sends
+     * them to pulsar. removing after pulsar confirms.
+     *
+     * Drains at rate 200 tasks/second, job estimates at minutes per task
+     *
+     * Tasks are sent to the "tasks" topic
+     */
+    @Scheduled(fixedDelay = 500)
+    @Transactional
+    fun drainOutbox() {
+        // Load oldest messages in outbox
+        val msgs = db.sql(
+            """
+          SELECT task_id, body
+          FROM outbox
+          ORDER BY created_at
+          LIMIT 100
+          FOR UPDATE SKIP LOCKED
+          """
+        ).query { rs, _ -> TaskMsg(rs.getLong("task_id"), json.readValue(rs.getString("body"))) }
+            .list()
+
+        if (msgs.isEmpty()) return
+        for (msg in msgs) pulsar.send(msg)
+        // Clear sent ids
+        db.sql("DELETE FROM outbox WHERE task_id IN (:ids)")
+            .param("ids", msgs.map { msg -> msg.taskId })
+            .update()
+    }
+
+
+    /**
      * Inserts task + outbox or finds the existing task
      * Relies on being called from a @Transactional spring function
      */
     private fun insertOrFind(input: CreateTaskBody): InsertResult {
+        val body = json.writeValueAsString(input.commands)
         val id = db
             .sql(
                 """
@@ -86,18 +128,24 @@ class Endpoints(
             """
             )
             .param("idem_key", input.idemKey)
-            .param("body", json.writeValueAsString(input.commands))
+            .param("body", body)
             .query(Long::class.java)
             .optional().getOrNull()
 
         //  If the task does not yet exist
         if (id != null) {
-            db.sql("INSERT INTO outbox (task_id) VALUES (:task_id)")
+            db.sql(
+                """
+            INSERT INTO outbox (task_id, body)
+            VALUES (:task_id, :body::jsonb)
+            """
+            )
                 .param("task_id", id)
+                .param("body", body)
                 .update()
             return InsertResult(id, null)
         } else {
-            val (existingId, body) = db
+            val (existingId, existingBody) = db
                 .sql(
                     """
                 SELECT task_id, body
@@ -110,7 +158,7 @@ class Endpoints(
                 .single()
             return InsertResult(
                 existingId,
-                json.readValue(body, Array<String>::class.java).toList()
+                json.readValue(existingBody)
             )
         }
     }
@@ -195,3 +243,6 @@ data class CreateTaskBody(
 data class APIResponse<T>(val msg: String, val data: T)
 data class TaskId(val taskId: Long)
 data class TaskStatus(val taskId: Long, val complete: Boolean)
+
+@PulsarMessage(topic = "tasks")
+data class TaskMsg(val taskId: Long, val commands: List<String>)
