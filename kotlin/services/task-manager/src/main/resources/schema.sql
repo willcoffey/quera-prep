@@ -14,14 +14,14 @@ CREATE TABLE IF NOT EXISTS task (
 CREATE TABLE IF NOT EXISTS outbox (
   task_id BIGINT PRIMARY KEY REFERENCES task (task_id),
   body JSONB NOT NULL,
+  runs INT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now ()
 );
 
 /** A record of all runs that have been executed */
 CREATE TABLE IF NOT EXISTS run (
-  run_idx INT NOT NULL,
+  run_id UUID PRIMARY KEY,
   task_id BIGINT NOT NULL REFERENCES task (task_id),
   result JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now (),
-  PRIMARY KEY (task_id, run_idx)
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now ()
 );

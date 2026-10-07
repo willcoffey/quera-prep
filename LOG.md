@@ -1,7 +1,23 @@
 # Current Summary
-## Task List
- - Get task-manager fully prototyped with pulsar and job receival.
- - Job runner with typescript port
+## Task-Manager
+I'm pausing work on task-manager for now, but it is by no means complete. It is
+at a point where it is functional enough to be used for a job runner, but there
+is still a lot of polish and functionality to add. Some of which can only be 
+done once the job runner specs have been determined. In no particular order, 
+things that need to be done for task manager
+
+ - Handling of inavlid pulsar messages, currently risk retry loop
+ - Refactoring of code organization, isolating HTTP methods and Pulsar 
+components etc.
+ - Refactoring how status is determined and how jobs are processed. This is the
+main part that I want to have the job runner complete for. This is the largest
+source of change.
+ - Database indexing hasn't been done, needs to be addressed once I know the 
+shape of all queries.
+ - There are no current tests, and I haven't familiarized myself with Kotlin
+testing boilerplate.
+ - Better standardization for API responses
+
 
 ---
 

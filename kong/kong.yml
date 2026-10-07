@@ -4,5 +4,5 @@ services:
     url: http://task-manager:8080  # compose service name + container port
     routes:                        # public paths that map to this service
       - paths:                     # prefix match, stripped before proxying
-          - /tasks                 # /tasks/alive -> task-manager:8080/alive
+          - /tasks                 # /tasks/foo -> task-manager:8080/foo
 

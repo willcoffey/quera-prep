@@ -30,12 +30,17 @@ import tools.jackson.module.kotlin.readValue
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.jdbc.core.simple.JdbcClient
 import kotlin.jvm.optionals.getOrNull
+import java.util.UUID
 
 // Pulsar
 import org.springframework.scheduling.annotation.EnableScheduling
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.pulsar.annotation.PulsarMessage
 import org.springframework.pulsar.core.PulsarTemplate
+
+import org.springframework.pulsar.annotation.PulsarListener
+import org.apache.pulsar.common.schema.SchemaType
+import org.springframework.stereotype.Component
 
 // JVM entry point
 fun main(args: Array<String>) {
@@ -80,6 +85,41 @@ class Endpoints(
         }
     }
 
+
+    @PulsarListener(topics = ["results"], subscriptionName = "task-manager")
+    @Transactional
+    fun complete(raw: String) {
+        val msg = json.readValue<JobMsg>(raw)
+
+        // Duplicate sends conflict on run_id and are dropped
+        db
+            .sql(
+                """
+            INSERT INTO run (run_id, task_id, result)
+            VALUES (:run_id, :task_id, :result::jsonb)
+            ON CONFLICT (run_id) DO NOTHING
+            """
+            )
+            .param("run_id", msg.runId)
+            .param("task_id", msg.taskId)
+            .param("result", json.writeValueAsString(msg.result))
+            .update()
+
+
+            // Hack until I decide how runs are going to be managed
+        if (msg.complete) {
+            db
+                .sql(
+                    """
+                UPDATE task
+                SET complete_runs = requested_runs
+                WHERE task_id = :id
+                """
+                )
+                .param("id", msg.taskId).update()
+        }
+    }
+
     /**
      * Runs every 500ms automatically, reads values from the outbox and sends
      * them to pulsar. removing after pulsar confirms.
@@ -94,13 +134,19 @@ class Endpoints(
         // Load oldest messages in outbox
         val msgs = db.sql(
             """
-          SELECT task_id, body
+          SELECT task_id, body, runs
           FROM outbox
           ORDER BY created_at
           LIMIT 100
           FOR UPDATE SKIP LOCKED
           """
-        ).query { rs, _ -> TaskMsg(rs.getLong("task_id"), json.readValue(rs.getString("body"))) }
+        ).query { rs, _ ->
+            TaskMsg(
+                rs.getLong("task_id"),
+                json.readValue(rs.getString("body")),
+                rs.getInt("runs"),
+            )
+        }
             .list()
 
         if (msgs.isEmpty()) return
@@ -134,10 +180,11 @@ class Endpoints(
 
         //  If the task does not yet exist
         if (id != null) {
+            //@TODO - Use actual runs value once implemented
             db.sql(
                 """
-            INSERT INTO outbox (task_id, body)
-            VALUES (:task_id, :body::jsonb)
+            INSERT INTO outbox (task_id, body, runs)
+            VALUES (:task_id, :body::jsonb, 1000)
             """
             )
                 .param("task_id", id)
@@ -215,7 +262,7 @@ class Endpoints(
             FROM task
             LEFT JOIN run USING (task_id)
             WHERE task.task_id = :taskId
-            ORDER BY run.run_idx
+            ORDER BY run.created_at
             """
             )
             .param("taskId", taskId)
@@ -245,4 +292,18 @@ data class TaskId(val taskId: Long)
 data class TaskStatus(val taskId: Long, val complete: Boolean)
 
 @PulsarMessage(topic = "tasks")
-data class TaskMsg(val taskId: Long, val commands: List<String>)
+data class TaskMsg(
+    val taskId: Long,
+    val commands: List<String>,
+    val runs: Int
+)
+
+data class JobMsg(
+    @field:Positive
+    val taskId: Long,
+    val runId: UUID,
+    val result: JsonNode,
+    // If the overall task is complete, instead of counting runs since I will
+    // collect all runs, including error runs that get retried
+    val complete: Boolean
+)
