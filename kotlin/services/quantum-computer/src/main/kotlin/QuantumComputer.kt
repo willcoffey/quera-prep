@@ -75,7 +75,7 @@ class QuantumComputer(
             // redelivery could cause morer runs than requested, but better just to keep all the
             // results if we did the work anyways.
             val runId = UUID.randomUUID()
-            val result = ResultMsg(msg.taskId, runId, qc.measure(QUBITS), run == msg.runs - 1)
+            val result = ResultMsg(msg.taskId, runId, qc.measure(), run == msg.runs - 1)
             pulsar.send("results", json.writeValueAsString(result))
         }
     }

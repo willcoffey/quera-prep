@@ -1,9 +1,35 @@
+Your task is to faithfully port a TypeScript quantum simulator to Kotlin
+for use in this project. The target file is `./Qsim.ai.kt`
+
+The TypeScript project is located at
+`~/repos/quantum-computer/`
+
+The only parts that need to be available are:
 ```kotlin
-import quantumcomputer.port.QuantumSim
+import quantumcomputer.port.QSim
 
-val qc = QuantumSim(16) // Init a 16 qubit simulator
-for (command in msg.commands)
-    qc.apply(bits, gate)
-
-val result = qc.measure(16)
+data class Command(
+    // A list of qubit positions, i.e. index in a bitstring
+    val qubits: List<Int>,
+    // The name of a gate. H, T, CNOT
+    val gate: String
+)
+val qc = QSim(QUBITS)
+qc.apply(command : Command)
+val result : Int = qc.measure()
 ```
+
+For how it is used see `../QuantumComputer.kt`
+
+You are only allowed to modify `Qsim.ai.kt`
+
+---
+QA:
+
+Follow the shape of the original, but use the primitives that make sense in
+Kotlin. Don't add new optimizations.
+
+`measure()` should simply fully measure. Make a minimal class that exports
+these methods, wrapping the port to shape the input.
+
+Follow bit ordering standards from the typescript test file
