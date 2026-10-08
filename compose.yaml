@@ -62,5 +62,15 @@ services:
       postgres: { condition: service_healthy, restart: true }
       pulsar:   { condition: service_healthy, restart: true }
     restart: on-failure
-
-
+  quantum-computer:
+    image: localhost/quantum-computer:latest
+    build:
+      context: kotlin
+      args:
+        SERVICE: quantum-computer
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx128m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+      SPRING_PULSAR_CLIENT_SERVICE_URL: pulsar://pulsar:6650
+    depends_on:
+      pulsar:   { condition: service_healthy, restart: true }
+    restart: on-failure

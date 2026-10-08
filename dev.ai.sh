@@ -25,7 +25,7 @@ help() {
     source changes. Compose output is appended to .dev/podman.log.
     Usage: $0 [SERVICE] [OPTIONS]...
            $0 --errors
-           $0 --delete-pulsar | --delete-all
+           $0 --delete-pulsar | --delete-all | --rebuild
 
     -h --help Print this help
     --delete-db Stop the service, drop and recreate its postgres database,
@@ -36,6 +36,10 @@ help() {
     --delete-all Remove all containers and the compose.yaml volumes (postgres
       and pulsar data), then exit. Keeps the gradle cache. A service name is
       optional, ignored.
+    --rebuild Build every service's normal image from current code, then
+      exit. Non dev services run these images. A service name is optional,
+      ignored. Replaced images are left untagged, remove them with
+      \`podman image prune\`.
     --ai-access Also publish pulsar's HTTP port on 127.0.0.1:8080, for
       sandboxed AI tools. Dev override only, compose.yaml is unchanged.
     --errors Don't start anything, just follow .dev/podman.log for compile
@@ -112,7 +116,7 @@ _dev_ai_sh() {
       [[ -d "$dir" ]] && words+=" $(basename "$dir")"
     done
   elif [[ "${COMP_WORDS[1]}" != -* ]]; then
-    words="--delete-db --delete-pulsar --delete-all --ai-access --help"
+    words="--delete-db --delete-pulsar --delete-all --rebuild --ai-access --help"
   fi
   COMPREPLY=($(compgen -W "$words" -- "$cur"))
 }
@@ -127,7 +131,7 @@ RESET=""
 OTHERS=()
 for arg in "$@"; do
   case "$arg" in
-    --delete-pulsar | --delete-all)
+    --delete-pulsar | --delete-all | --rebuild)
       [[ -z "$RESET" ]] || usage
       RESET="$arg"
       ;;
@@ -159,6 +163,14 @@ if [[ "$RESET" == --delete-all ]]; then
   echo "[dev] removing containers and volumes"
   # shellcheck disable=SC2086
   $COMPOSE -f compose.yaml down -v
+  exit
+fi
+
+# compose.yaml only, so each service builds its normal image, not dev.
+if [[ "$RESET" == --rebuild ]]; then
+  cd "$ROOT"
+  # shellcheck disable=SC2086
+  $COMPOSE -f compose.yaml build
   exit
 fi
 SERVICE="$1"
