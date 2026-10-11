@@ -1,0 +1,64 @@
+// Styling
+import "./App.ai.css";
+// React
+import { StrictMode, useReducer, useState } from "react";
+import { createRoot } from "react-dom/client";
+
+// Minimal state machine
+import { Core } from "./Core";
+
+// Component Imports
+import { AppBar } from "./components/AppBar/AppBar.ai";
+import { StateSpace } from "./components/StateSpace/StateSpace.ai";
+import { QubitSelector } from "./components/QubitSelector/QubitSelector.ai";
+import { Keypad } from "./components/Keypad/Keypad.ai";
+
+// UI Agnostic state & logic
+const core = new Core();
+const dispatch = (c : string) => core.dispatch(c);
+
+function App() {
+  /**
+   * Setup a piece of state that gets changed whenever core state is
+   * changed in order to trigger a re-render. Bit of a hack, not
+   * recommened for larger apps.
+   */
+  const [renderCount, render] = useReducer((n: number) => n + 1, 0);
+  core.onChange = render;
+
+  /** Options for config space rendering */
+  const [displayOptions, setDisplayOptions] = useState<DisplayOptions>({
+    gridLines: true,
+    showResults: false,
+  });
+
+  return (
+    <div className="App">
+      <AppBar
+        programId={core.state.programId}
+        dispatch={dispatch}
+        displayOptions={displayOptions}
+        setDisplayOptions={setDisplayOptions}
+      />
+      <StateSpace
+        displayOptions={displayOptions}
+      />
+      <QubitSelector
+        selectedQubits={core.state.selectedQubits}
+        dispatch={dispatch}
+      />
+      <Keypad />
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+
+export interface DisplayOptions {
+  gridLines: boolean;
+  showResults: boolean;
+}

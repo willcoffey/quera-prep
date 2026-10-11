@@ -1,34 +1,19 @@
 # Current Summary
-## Task-Manager
-I'm pausing work on task-manager for now, but it is by no means complete. It is
-at a point where it is functional enough to be used for a job runner, but there
-is still a lot of polish and functionality to add. Some of which can only be 
-done once the job runner specs have been determined. In no particular order, 
-things that need to be done for task manager
-
- - Handling of inavlid pulsar messages, currently risk retry loop
- - Refactoring of code organization, isolating HTTP methods and Pulsar 
-components etc.
- - Refactoring how status is determined and how jobs are processed. This is the
-main part that I want to have the job runner complete for. This is the largest
-source of change.
- - Database indexing hasn't been done, needs to be addressed once I know the 
-shape of all queries.
- - There are no current tests, and I haven't familiarized myself with Kotlin
-testing boilerplate.
- - Better standardization for API responses
-
 
 ---
 
-Starting work on kotlin services, and will be leaving a lot of rough edges to 
-get a prototype. These I'm leaving for later
+# Sat Oct 10 07:46:11 PM EDT 2026
+Old claude simply called playwright via bash so I didn't notice the mcp server
+wasn't accessible. Updated local `~/.claude.json` to point to the correct
+binary and use the playwright folder that bubblewrap allows for cache.
+1. Added env to ~/.claude.json
+```json
+      "env": {
+        "PLAYWRIGHT_MCP_EXECUTABLE_PATH": "/home/agent-will/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux-arm64/chrome-headless-shell",
+        "PWTEST_SERVER_REGISTRY": "/home/agent-will/playwright-out/registry"
+      }
+```
 
-- I'm buffering entire tasks, not individual runs. Could lead to single tasks
-blocking if they take a long time.
-
-- I'm not intending to paginate task results. Once I have a prototype I'll just
-make a max runs that maps to a reasonable value.
 
 # Tue Oct  6 02:26:45 PM EDT 2026
 Got pulsar installed and added a means to expose it to localhost so llm can 

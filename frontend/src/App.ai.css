@@ -1,0 +1,57 @@
+/* base16 Default Dark */
+:root {
+  --base00: #181818;
+  --base01: #282828;
+  --base02: #383838;
+  --base03: #585858;
+  --base04: #b8b8b8;
+  --base05: #d8d8d8;
+  --base06: #e8e8e8;
+  --base07: #f8f8f8;
+  --base08: #ab4642;
+  --base09: #dc9656;
+  --base0A: #f7ca88;
+  --base0B: #a1b56c;
+  --base0C: #86c1b9;
+  --base0D: #7cafc2;
+  --base0E: #ba8baf;
+  --base0F: #a16946;
+}
+
+body { margin: 0; }
+
+/* rows from the sketch: 44px buttons, square state, 2 rows of 44px buttons,
+   keypad gets the rest (at least 2 rows) */
+.App {
+  display: grid;
+  grid-template:
+    "appbar" 44px
+    "state" auto
+    "qubits" 92px
+    "keypad" minmax(92px, 1fr)
+    / 1fr;
+  gap: 4px;
+  padding: 4px;
+  box-sizing: border-box;
+  height: 100dvh;
+}
+
+.App > * {
+  background: #888;
+  display: grid;
+  place-content: center;
+  font-size: 1.5rem;
+}
+
+.AppBar { grid-area: appbar; }
+.QubitSelector { grid-area: qubits; }
+.Keypad { grid-area: keypad; }
+
+/* square; shrinks so the other rows fit:
+   248px = padding (2×4) + 44 + 92 + 92 + gaps (3×4) */
+.StateSpace {
+  grid-area: state;
+  width: min(100%, 100dvh - 248px);
+  aspect-ratio: 1;
+  justify-self: center;
+}

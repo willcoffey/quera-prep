@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "deny": ["Edit(**)", "Edit(!*/)", "Edit(!*.ai.*)"]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": { "denyWrite": ["./"] }
+  }
+}

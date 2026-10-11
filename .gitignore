@@ -4,4 +4,5 @@
 build/
 .dev/
 .env
-
+frontend/sketch/
+frontend/node_modules/
