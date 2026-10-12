@@ -1,23 +1,22 @@
 // Styling
 import "./App.ai.css";
 // React
-import { StrictMode, useReducer, useState } from "react";
-import { createRoot } from "react-dom/client";
+import {useReducer, useState} from "react";
 
 // Minimal state machine
-import { Core } from "./Core";
+import {Core} from "./Core";
 
 // Component Imports
-import { AppBar } from "./components/AppBar/AppBar.ai";
-import { StateSpace } from "./components/StateSpace/StateSpace.ai";
-import { QubitSelector } from "./components/QubitSelector/QubitSelector.ai";
-import { Keypad } from "./components/Keypad/Keypad.ai";
+import {AppBar} from "./components/AppBar/AppBar.ai";
+import {StateSpace} from "./components/StateSpace/StateSpace.ai";
+import {QubitSelector} from "./components/QubitSelector/QubitSelector.ai";
+import {Keypad} from "./components/Keypad/Keypad.ai";
 
 // UI Agnostic state & logic
 const core = new Core();
-const dispatch = (c : string) => core.dispatch(c);
+const dispatch = core.dispatch.bind(core);
 
-function App() {
+export function App() {
   /**
    * Setup a piece of state that gets changed whenever core state is
    * changed in order to trigger a re-render. Bit of a hack, not
@@ -42,21 +41,23 @@ function App() {
       />
       <StateSpace
         displayOptions={displayOptions}
+        selectedQubits={core.state.selectedQubits}
+        stateVector={core.state.qc.worlds}
+        // Since stateVector is always the same float, trigger render
+        version={renderCount}
       />
       <QubitSelector
         selectedQubits={core.state.selectedQubits}
+        lastInstruction={core.state.lastInstruction}
         dispatch={dispatch}
       />
-      <Keypad />
+      <Keypad
+        selectedQubits={core.state.selectedQubits}
+        dispatch={dispatch}
+      />
     </div>
   );
 }
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
 
 export interface DisplayOptions {
   gridLines: boolean;

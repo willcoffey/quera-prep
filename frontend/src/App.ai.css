@@ -18,17 +18,31 @@
   --base0F: #a16946;
 }
 
-body { margin: 0; }
+body { margin: 0; background: #000; }
 
-/* rows from the sketch: 44px buttons, square state, 2 rows of 44px buttons,
+/* rows from the sketch: a row of buttons, square state, 2 rows of buttons,
    keypad gets the rest (at least 2 rows) */
 .App {
+  /* Shared square button size: 48px, shrinking (e.g. when zoomed) so the
+     7 gapless keypad columns fit the width, but never below the 24px
+     WCAG AA minimum. Unregistered, so cqi resolves where it's used,
+     against this container. */
+  --button: clamp(24px, 100cqi / 7, 48px);
+  /* Button grids have no gaps; a bevel separates the buttons. Raised
+     by default, inset when pressed or toggled on. */
+  --bevel-out:
+    inset 1px 1px 0 rgb(255 255 255 / 0.08),
+    inset -1px -1px 0 rgb(0 0 0 / 0.6);
+  --bevel-in:
+    inset 1px 1px 0 rgb(0 0 0 / 0.6),
+    inset -1px -1px 0 rgb(255 255 255 / 0.05);
+  container-type: inline-size;
   display: grid;
   grid-template:
-    "appbar" 44px
+    "appbar" auto
     "state" auto
-    "qubits" 92px
-    "keypad" minmax(92px, 1fr)
+    "qubits" auto
+    "keypad" 1fr
     / 1fr;
   gap: 4px;
   padding: 4px;
@@ -47,11 +61,11 @@ body { margin: 0; }
 .QubitSelector { grid-area: qubits; }
 .Keypad { grid-area: keypad; }
 
-/* square; shrinks so the other rows fit:
-   248px = padding (2×4) + 44 + 92 + 92 + gaps (3×4) */
+/* square; shrinks so the other rows fit: 5 button rows, plus 20px =
+   padding (2×4) + gaps between rows (3×4) */
 .StateSpace {
   grid-area: state;
-  width: min(100%, 100dvh - 248px);
+  width: min(100%, 100dvh - 20px - 5 * var(--button));
   aspect-ratio: 1;
   justify-self: center;
 }

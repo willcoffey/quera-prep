@@ -1,0 +1,100 @@
+/* `.App > *` in App.ai.css sets placeholder styles; the doubled class
+   outranks it regardless of stylesheet order. */
+.Keypad.Keypad {
+  /* square --button (App.ai.css), right aligned so the last 4 columns
+     line up with the QubitSelector buttons */
+  display: flex;
+  place-content: normal end;
+  align-items: start;
+  font-size: calc(var(--button) * 0.42);
+  font-family: system-ui, sans-serif;
+  background: var(--base00);
+  color: var(--base05);
+  min-width: 0;
+  min-height: 0;
+}
+
+.Keypad-gates,
+.Keypad-controls {
+  display: grid;
+  grid-template-rows: repeat(2, var(--button));
+}
+
+.Keypad-gates {
+  grid-template-columns: repeat(5, var(--button));
+}
+
+.Keypad-controls {
+  grid-template-columns: repeat(2, var(--button));
+}
+
+.Keypad-empty {
+  background: var(--base01);
+  opacity: 0.5;
+}
+
+.Keypad-button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: none;
+  padding: 0;
+  box-shadow: var(--bevel-out);
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.Keypad-gate {
+  background: var(--base01);
+  color: var(--base05);
+}
+
+/* darker shade for controls */
+.Keypad-control {
+  background: var(--base00);
+  color: var(--base04);
+}
+
+.Keypad-button[data-hovered],
+.Keypad-button[data-pressed] {
+  background: var(--base02);
+}
+
+.Keypad-button[data-pressed],
+.Keypad-control[data-selected] {
+  box-shadow: var(--bevel-in);
+}
+
+.Keypad-control[data-selected] {
+  background: var(--base02);
+  color: var(--base09);
+}
+
+.Keypad-button[data-disabled] {
+  color: var(--base03);
+  cursor: default;
+}
+
+.Keypad-button[data-focus-visible] {
+  outline: 2px solid var(--base0D);
+  outline-offset: -2px;
+}
+
+/* inverse marker, top right */
+.Keypad-dagger {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 0.625rem;
+  color: var(--base09);
+}
+
+.Keypad-tooltip {
+  padding: 4px 8px;
+  background: var(--base02);
+  color: var(--base06);
+  border: 1px solid var(--base03);
+  font: 0.875rem system-ui, sans-serif;
+}

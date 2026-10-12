@@ -1,0 +1,110 @@
+/* `.App > *` in App.ai.css sets placeholder styles; the doubled class
+   outranks it regardless of stylesheet order. */
+.AppBar.AppBar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  place-content: normal;
+  font-size: 1rem;
+  font-family: system-ui, sans-serif;
+  background: var(--base01);
+  color: var(--base05);
+  min-width: 0;
+}
+
+.AppBar-programId {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  margin-right: 4px;
+}
+
+.AppBar-programId textarea {
+  flex: 1;
+  min-width: 0;
+  resize: none;
+  overflow: hidden;
+  white-space: nowrap;
+  box-sizing: border-box;
+  height: 100%;
+  margin: 0;
+  padding: 0 8px;
+  border: none;
+  background: var(--base00);
+  color: var(--base05);
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  line-height: var(--button);
+}
+
+.AppBar-programId textarea[data-focus-visible],
+.AppBar-button[data-focus-visible] {
+  outline: 2px solid var(--base0D);
+  outline-offset: -2px;
+}
+
+.AppBar-button {
+  flex: 0 0 auto;
+  /* square --button from App.ai.css */
+  width: var(--button);
+  height: var(--button);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: var(--base01);
+  color: var(--base05);
+  box-shadow: var(--bevel-out);
+  font: inherit;
+  cursor: pointer;
+}
+
+.AppBar-button svg {
+  width: 50%;
+  height: 50%;
+}
+
+.AppBar-button[data-hovered],
+.AppBar-button[data-pressed] {
+  background: var(--base02);
+}
+
+.AppBar-button[data-pressed],
+.AppBar-toggle[data-selected] {
+  box-shadow: var(--bevel-in);
+}
+
+.AppBar-toggle[data-selected] {
+  color: var(--base09);
+}
+
+.AppBar-tooltip {
+  padding: 4px 8px;
+  background: var(--base02);
+  color: var(--base06);
+  border: 1px solid var(--base03);
+  font: 0.875rem system-ui, sans-serif;
+}
+
+.AppBar-popover {
+  background: var(--base01);
+  color: var(--base05);
+  border: 1px solid var(--base03);
+  min-width: 160px;
+  font-family: system-ui, sans-serif;
+}
+
+.AppBar-menu {
+  outline: none;
+  padding: 4px 0;
+}
+
+.AppBar-menuItem {
+  padding: 8px 12px;
+  cursor: pointer;
+  outline: none;
+}
+
+.AppBar-menuItem[data-focused] {
+  background: var(--base02);
+}

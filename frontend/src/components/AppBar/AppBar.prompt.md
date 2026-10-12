@@ -1,5 +1,7 @@
-See `frontend/src/App.tsx` for its usage.
-Read `frontend/architecture.md` for context.
+See `frontend/src/App.tsx` for component usage.
+See `frontend/architecture.md` for general context.
+
+Only edit the two `.tsx` and `.css` files for this component.
 
 Use react-aria components when they make sense. test purely via
 keyboard input, `tab` etc in playwright.

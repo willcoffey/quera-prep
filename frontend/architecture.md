@@ -16,6 +16,8 @@ Base16 CSS vars, --base00 to --base0F.
   base06 light fg    base0E accent
   base07 light bg    base0F accent
 
+# Default to A11Y standards when applicable
+
 # Core.ts
 All domain logic and state exists in this class. UI agnostic. Would
 be shared by CLI as well as web app. Core state can only be modified
