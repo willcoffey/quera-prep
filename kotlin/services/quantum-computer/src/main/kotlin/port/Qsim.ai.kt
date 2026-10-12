@@ -1,5 +1,7 @@
 package quantumcomputer.port
 
+import kotlin.math.PI
+import kotlin.math.sqrt
 import kotlin.random.Random
 import quantumcomputer.Command
 
@@ -17,24 +19,28 @@ typealias InterleavedComplexVector = DoubleArray
 typealias ComplexMatrix = Array<InterleavedComplexVector>
 
 /**
- * Minimal wrapper shaping the project's Command input onto the port
+ * Minimal wrapper shaping the project's Command input onto the port.
  */
 class QSim(n: Int) {
     private val qc = QuantumComputer(n)
 
     fun apply(command: Command) {
-        val gate = when (command.gate) {
-            "H" -> Gates.Hadamard
-            "T" -> Gates.T
-            "CNOT" -> Gates.CNOT
-            else -> throw IllegalArgumentException("Unknown gate ${command.gate}")
-        }
-        qc.applyGate(command.qubits, gate.forward)
+        // The project names the Hadamard "H", every other name matches Gates
+        val name = if (command.gate == "H") "Hadamard" else command.gate
+        val gate = Gates[name]
+            ?: throw IllegalArgumentException("Unknown gate ${command.gate}")
+        qc.applyGate(command.qubits, if (command.reverse) gate.reverse else gate.forward)
     }
 
-    // Fully measure, qubits in ascending order as in the original's tests
+    /**
+     * Fully measures the system. Qubits are listed in ascending order as in
+     * the TS tests, so qubits[0] is the high bit of the result, i.e. qubit i
+     * is index i of the n bit result bitstring.
+     */
     fun measure(): Int = qc.measure((0 until qc.qubits).toList())
 }
+
+enum class Direction { FORWARD, REVERSE }
 
 class QuantumComputer(n: Int) {
     /*
@@ -51,11 +57,59 @@ class QuantumComputer(n: Int) {
 
         // All operations are relative, so it doesn't matter what the initial value
         // is
-        worlds[0] = Random.nextDouble()
+        //worlds[0] = Random.nextDouble()
+        worlds[0] = 1.0
     }
 
     /**
-     * Apply the supplied gate using the specified qubit positions
+     * AI Generated function body - Tested against applyGate
+     */
+    fun applyFractionalGate(
+        qubits: List<Int>,
+        gate: Gate,
+        direction: Direction,
+        fraction: Double,
+    ) {
+        // Keyed by signed fraction, +f forward and -f reverse
+        val key = if (direction == Direction.FORWARD) fraction else -fraction
+        val cache = gate.cache ?: mutableMapOf<Double, ComplexMatrix>().also { gate.cache = it }
+        var matrix = cache[key]
+
+        if (matrix == null) {
+            // exp(-i·H·t) as a Taylor series, I + A + A²/2! + ..., where A = -i·H·t
+            val t = 1 / key
+            val a = Array(gate.generator.size) { i ->
+                val r = gate.generator[i]
+                DoubleArray(r.size) { j -> (if (j % 2 != 0) -r[j - 1] else r[j + 1]) * t }
+            }
+            val aT = Array(a.size) { i ->
+                DoubleArray(2 * a.size) { k -> a[k / 2][2 * i + k % 2] }
+            }
+            var term: ComplexMatrix = Array(a.size) { i ->
+                DoubleArray(a[i].size) { j -> if (j == 2 * i) 1.0 else 0.0 }
+            }
+            var sum: ComplexMatrix = term
+            for (k in 1 until 30) {
+                val prevTerm = term
+                term = Array(prevTerm.size) { i ->
+                    val v = applyMatrix(aT, prevTerm[i])
+                    DoubleArray(v.size) { j -> v[j] / k }
+                }
+                val prevSum = sum
+                val nextTerm = term
+                sum = Array(prevSum.size) { i ->
+                    DoubleArray(prevSum[i].size) { j -> prevSum[i][j] + nextTerm[i][j] }
+                }
+            }
+            cache[key] = sum
+            matrix = sum
+        }
+
+        applyGate(qubits, matrix)
+    }
+
+    /**
+     * Apply the supplied gate using the specified qubit positions.
      *
      * qubits is an array of bit positions, with max qubit being <= number of
      * qubits
@@ -125,7 +179,8 @@ class QuantumComputer(n: Int) {
         var r = Random.nextDouble() * sumOfWeights
         var outcome = 0
         for (i in 0 until outcomes) {
-            if (weights[i] == 0.0) continue
+            // JS falsy check, 0 or NaN
+            if (weights[i] == 0.0 || weights[i].isNaN()) continue
             r -= weights[i]
             outcome = i
             if (r < 0) break
@@ -170,13 +225,14 @@ class QuantumComputer(n: Int) {
             /**
              * Ensure that the matrix is square and equal length to the supplied vector
              */
-            require(
-                matrix.isNotEmpty() &&
-                    matrix.size == matrix[0].size / 2 &&
-                    vector.isNotEmpty() &&
-                    vector.size / 2 == matrix.size
-            ) { "Invalid matrix or vector in applyMatrix" }
-
+            if (
+                matrix.isEmpty() ||
+                matrix.size != matrix[0].size / 2 ||
+                vector.isEmpty() ||
+                vector.size / 2 != matrix.size
+            ) {
+                throw IllegalArgumentException("Invalid matrix or vector in applyMatrix")
+            }
             val result = InterleavedComplexVector(2 * matrix.size)
             for (i in matrix.indices) {
                 var rSum = 0.0
@@ -205,7 +261,7 @@ class QuantumComputer(n: Int) {
             return Pair(f - l, o + i)
         }
 
-        fun squaredAmplitude(r: Double, i: Double) = r * r + i * i
+        fun squaredAmplitude(r: Double, i: Double): Double = r * r + i * i
 
         fun partitionWorlds(qubits: List<Int>, totalQubits: Int): Sequence<IntArray> = sequence {
             /**
@@ -215,11 +271,14 @@ class QuantumComputer(n: Int) {
              *  - qubits array length < total qubits
              */
 
+            val freeQubits = mutableListOf<Int>()
             /**
              * Generate an array of bit positions for the free qubits that is the
              * inverse of the input qubit array
              */
-            val freeQubits = (0 until totalQubits).filter { it !in qubits }
+            for (i in 0 until totalQubits) {
+                if (i !in qubits) freeQubits.add(i)
+            }
 
             /**
              * First, we need to generate all the unique configs that the input qubits
@@ -277,15 +336,28 @@ class QuantumComputer(n: Int) {
  * A gate paired with the gate that undoes it, so any computation built from
  * these can be run backwards. Many gates are their own reverse.
  */
-data class Gate(
+class Gate(
     val forward: ComplexMatrix,
     val reverse: ComplexMatrix,
+    /**
+     * Paraphrased AI: A hermitian matrix, used to generate forward/reverese as
+     * well as allowing ease of fractional application
+     */
+    val generator: ComplexMatrix,
+    // Caches generated fractional matricies, for performance when animating.
+    var cache: MutableMap<Double, ComplexMatrix>? = null,
 )
 
-private val SQRT1_2 = Math.sqrt(0.5)
+fun isGate(s: String): Boolean = Gates.containsKey(s)
 
-object Gates {
-    val Hadamard = Gate(
+private val SQRT1_2 = sqrt(0.5)
+
+/**
+ * Mostly AI Generated Gates
+ * Hardcoded gate values have been tested against generator up to the C..CZ
+ */
+val Gates: Map<String, Gate> = mapOf(
+    "Hadamard" to Gate(
         forward = arrayOf(
             doubleArrayOf(SQRT1_2, 0.0, SQRT1_2, 0.0),
             doubleArrayOf(SQRT1_2, 0.0, -SQRT1_2, 0.0),
@@ -295,14 +367,18 @@ object Gates {
             doubleArrayOf(SQRT1_2, 0.0, SQRT1_2, 0.0),
             doubleArrayOf(SQRT1_2, 0.0, -SQRT1_2, 0.0),
         ),
-    )
-
+        // (π/2)(I - H), since H is its own reverse
+        generator = arrayOf(
+            doubleArrayOf(PI / 2 * (1 - SQRT1_2), 0.0, -PI / 2 * SQRT1_2, 0.0),
+            doubleArrayOf(-PI / 2 * SQRT1_2, 0.0, PI / 2 * (1 + SQRT1_2), 0.0),
+        ),
+    ),
     /**
      * Flips the second qubit in the worlds where the first qubit is set, i.e.
      * applyGate([control, target], Gates.CNOT.forward). Its own reverse, since
      * flipping the same worlds twice puts them back.
      */
-    val CNOT = Gate(
+    "CNOT" to Gate(
         forward = arrayOf(
             doubleArrayOf(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             doubleArrayOf(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0),
@@ -315,9 +391,15 @@ object Gates {
             doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
             doubleArrayOf(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
         ),
-    )
-
-    val T = Gate(
+        // (π/2)(I - CNOT), since CNOT is its own reverse
+        generator = arrayOf(
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, PI / 2, 0.0, -PI / 2, 0.0),
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, -PI / 2, 0.0, PI / 2, 0.0),
+        ),
+    ),
+    "T" to Gate(
         forward = arrayOf(
             doubleArrayOf(1.0, 0.0, 0.0, 0.0),
             doubleArrayOf(0.0, 0.0, SQRT1_2, SQRT1_2),
@@ -326,5 +408,104 @@ object Gates {
             doubleArrayOf(1.0, 0.0, 0.0, 0.0),
             doubleArrayOf(0.0, 0.0, SQRT1_2, -SQRT1_2),
         ),
-    )
+        generator = arrayOf(
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, -PI / 4, 0.0),
+        ),
+    ),
+    // Flips the qubit. Its own reverse.
+    "X" to Gate(
+        forward = arrayOf(
+            doubleArrayOf(0.0, 0.0, 1.0, 0.0),
+            doubleArrayOf(1.0, 0.0, 0.0, 0.0),
+        ),
+        reverse = arrayOf(
+            doubleArrayOf(0.0, 0.0, 1.0, 0.0),
+            doubleArrayOf(1.0, 0.0, 0.0, 0.0),
+        ),
+        // (π/2)(I - X), since X is its own reverse
+        generator = arrayOf(
+            doubleArrayOf(PI / 2, 0.0, -PI / 2, 0.0),
+            doubleArrayOf(-PI / 2, 0.0, PI / 2, 0.0),
+        ),
+    ),
+    // Negates the worlds where the qubit is set. Its own reverse.
+    "Z" to Gate(
+        forward = arrayOf(
+            doubleArrayOf(1.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, -1.0, 0.0),
+        ),
+        reverse = arrayOf(
+            doubleArrayOf(1.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, -1.0, 0.0),
+        ),
+        generator = arrayOf(
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, PI, 0.0),
+        ),
+    ),
+    /**
+     * Negate the worlds where every qubit is set, for 4 to 8 qubits. Symmetric
+     * like CZ and CCZ, so all qubits act as controls. Each is its own reverse.
+     */
+    "CZ" to Gate(
+        forward = controlledZ(2),
+        reverse = controlledZ(2),
+        generator = controlledZGenerator(2),
+    ),
+    "CCZ" to Gate(
+        forward = controlledZ(3),
+        reverse = controlledZ(3),
+        generator = controlledZGenerator(3),
+    ),
+    "CCCZ" to Gate(
+        forward = controlledZ(4),
+        reverse = controlledZ(4),
+        generator = controlledZGenerator(4),
+    ),
+    "CCCCZ" to Gate(
+        forward = controlledZ(5),
+        reverse = controlledZ(5),
+        generator = controlledZGenerator(5),
+    ),
+    "CCCCCZ" to Gate(
+        forward = controlledZ(6),
+        reverse = controlledZ(6),
+        generator = controlledZGenerator(6),
+    ),
+    "CCCCCCZ" to Gate(
+        forward = controlledZ(7),
+        reverse = controlledZ(7),
+        generator = controlledZGenerator(7),
+    ),
+    "CCCCCCCZ" to Gate(
+        forward = controlledZ(8),
+        reverse = controlledZ(8),
+        generator = controlledZGenerator(8),
+    ),
+)
+
+/**
+ * Identity on n qubits, except the all-ones world is negated.
+ */
+fun controlledZ(n: Int): ComplexMatrix {
+    val size = 1 shl n
+    return Array(size) { row ->
+        val r = InterleavedComplexVector(2 * size)
+        r[2 * row] = if (row == size - 1) -1.0 else 1.0
+        r
+    }
+}
+
+/**
+ * Zero everywhere except π on the all-ones world, so exp(-i·H) negates that
+ * world and leaves the rest alone, matching controlledZ.
+ */
+fun controlledZGenerator(n: Int): ComplexMatrix {
+    val size = 1 shl n
+    return Array(size) { row ->
+        val r = InterleavedComplexVector(2 * size)
+        if (row == size - 1) r[2 * row] = PI
+        r
+    }
 }
