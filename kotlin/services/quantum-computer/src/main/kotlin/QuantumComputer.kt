@@ -19,6 +19,9 @@ import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
 import jakarta.validation.constraints.Pattern
 
+// For REST requests to pull programs from task-manager
+import org.springframework.web.client.RestClient
+import org.springframework.web.client.body
 
 import org.apache.pulsar.client.api.SubscriptionType
 import org.springframework.pulsar.listener.AckMode
@@ -28,6 +31,9 @@ import org.springframework.pulsar.listener.AckMode
  */
 import quantumcomputer.port.QSim
 
+
+data class APIResponse<T>(val msg: String, val data: T)
+data class Program(val programId: String, val commands: List<String>)
 
 private const val QUBITS = 8
 private val GATE_QUBITS = mapOf(
@@ -56,45 +62,101 @@ fun main(args: Array<String>) {
 class QuantumComputer(
     private val json: ObjectMapper,
     private val pulsar: PulsarTemplate<Any>,
-    private val validator: Validator
+    private val validator: Validator,
 ) {
+    /**
+     * Cache of recently run programs, avoids excessive task-manager requests
+     * eventually could be replaced with local database lookup.
+     */
+    private val programs = LinkedHashMap<String, List<Command>>()
+
     /**
      * Subscribe to task events
      *
      */
     @PulsarListener(
-        topics = ["tasks"],
+        topics = ["runs"],
         subscriptionName = "quantum-computer",
         subscriptionType = [SubscriptionType.Shared],
         ackMode = AckMode.RECORD,
-        properties = ["receiverQueueSize=1"],
+        properties = ["receiverQueueSize=50"],
     )
     fun run(raw: ByteArray) {
-        // Input Validation
-        val msg = try {
-            parseTask(raw)
-        } catch (e: InvalidTaskException) {
-            //@TODO publish error to pulsar
-            println(e.message)
-            return
-        }
+        try {
+            // Input Validation
+            val msg = parseRun(raw)
 
-        // Run each job
-        repeat(msg.runs) { run ->
+            // Create a new QC instance
             val qc = QSim(QUBITS)
-            for (command in msg.commands)
+
+            // Load the program from cache, or fetch it from task-manager
+            val commands = programs.getOrPut(msg.programId) { loadProgramInstructions(msg.programId) }
+            if (programs.size > 100) programs.remove(programs.keys.first())
+
+            // Execute the program on the sim
+            for (command in commands)
                 qc.apply(command)
 
-            // redelivery could cause morer runs than requested, but better just to keep all the
-            // results if we did the work anyways.
-            val runId = UUID.randomUUID()
-            val result = ResultMsg(msg.taskId, runId, qc.measure(), run == msg.runs - 1)
+            // Format the result 
+            val result = ResultMsg(msg.programId, msg.taskId, msg.runId, qc.measure())
+
             pulsar.send("results", json.writeValueAsString(result))
+        } catch (e: Exception) {
+            println("Run failed ${e.message}")
         }
     }
 
+    fun loadProgramInstructions(programId: String): List<Command> {
+        val res = RestClient.create().get()
+            .uri("http://task-manager:8080/programs/{id}", programId)
+            .retrieve()
+            .body<APIResponse<Program>>()
+        if (res == null)
+            throw IllegalStateException("Empty response for program $programId")
+        return parseCommands(res.data.commands)
+    }
 
-    fun parseTask(raw: ByteArray): Task {
+    /**
+     * Parse the command strings into a list of qubit indices, gate name and
+     * direction. i.e. "1 0 CNOT forward"
+     */
+    fun parseCommands(raw: List<String>): List<Command> {
+        val commands = mutableListOf<Command>()
+        for (c in raw) {
+            // Split into a string array of [index, ..., gate, direction], 
+            val parts = c.trim().split(" ")
+            if (parts.size < 3)
+                throw InvalidTaskException("Invalid command string, must be list of qubit positions followed by gate and direction. i.e. 1 0 CNOT forward")
+
+            // Extract gate name and direction
+            val (gate, direction) = parts.takeLast(2)
+            if (direction != "forward" && direction != "reverse")
+                throw InvalidTaskException("Invalid direction")
+
+            // Validate gate name
+            if (GATE_QUBITS[gate] == null) throw InvalidTaskException("Invalid gate")
+
+            // Validate qubit indicies
+            val qubits = mutableListOf<Int>()
+            for (i in parts.dropLast(2)) {
+                val q = i.toIntOrNull() ?: throw InvalidTaskException("Invalid qubit value")
+                if (q !in 0 until QUBITS) throw InvalidTaskException("Invalid qubit index")
+                if (q in qubits) throw InvalidTaskException("Duplicate Qubit")
+                qubits.add(q)
+            }
+            if (GATE_QUBITS[gate] != qubits.size)
+                throw InvalidTaskException("Invalid qubit count for gate")
+
+            commands.add(Command(qubits, gate, direction == "reverse"))
+        }
+        return commands
+    }
+
+
+    /**
+     * Parse the raw pulsar message bytes into a TaskMsg
+     */
+    fun parseRun(raw: ByteArray): TaskMsg {
         val msg: TaskMsg
         try {
             msg = json.readValue(raw, TaskMsg::class.java)
@@ -106,58 +168,19 @@ class QuantumComputer(
         if (violations.isNotEmpty()) {
             throw InvalidTaskException("Invalid task properties")
         }
-
-
-        // Parse the command strings into a list of qubit indicies and gate 
-        // name
-
-        val commands = mutableListOf<Command>()
-        for (c in msg.commands) {
-            val parts = c.trim().split(" ")
-            if (parts.size < 3)
-                throw InvalidTaskException("Invalid command string, must be list of qubit positions followed by gate. i.e. 1 0 CNOT")
-
-            // Parse the gate as the last word in the string
-            val (gate, direction) = parts.takeLast(2)
-
-
-            val qubits = mutableListOf<Int>()
-            for (i in parts.dropLast(2)) {
-                val q = i.toIntOrNull() ?: throw InvalidTaskException("Invalid qubit value")
-                if (q !in 0 until QUBITS) throw InvalidTaskException("Invalid qubit index")
-                if (q in qubits) throw InvalidTaskException("Duplicate Qubit")
-                qubits.add(q)
-            }
-
-            if (GATE_QUBITS[gate] == null)
-                throw InvalidTaskException("Invalid gate")
-            if (GATE_QUBITS[gate] != qubits.size)
-                throw InvalidTaskException("Invalid qubit count for gate")
-
-            commands.add(Command(qubits, gate, direction == "reverse"))
-        }
-
-        return Task(msg.taskId, commands, msg.runs)
+        return msg
     }
-
 }
 
 class InvalidTaskException(reason: String) : RuntimeException(reason)
 data class TaskMsg(
+    val runId: UUID,
     @field:Positive
     val taskId: Long,
-    @field:NotEmpty @field:Size(max = 1000)
-    val commands: List<
-            @Pattern(regexp = "\\d+( \\d+)* [A-Za-z]+ (forward|reverse)") String>,
-    @field:Positive @field:Max(1000)
-    val runs: Int,
+    @field:Pattern(regexp = "[0-9a-f]{64}")
+    val programId: String,
 )
 
-data class Task(
-    val taskId: Long,
-    val commands: List<Command>,
-    val runs: Int,
-)
 
 data class Command(
     val qubits: List<Int>,
@@ -166,8 +189,8 @@ data class Command(
 )
 
 data class ResultMsg(
+    val programId: String,
     val taskId: Long,
     val runId: UUID,
     val result: Int,
-    val complete: Boolean,
 )

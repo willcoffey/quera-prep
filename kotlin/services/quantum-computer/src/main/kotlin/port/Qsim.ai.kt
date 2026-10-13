@@ -33,11 +33,10 @@ class QSim(n: Int) {
     }
 
     /**
-     * Fully measures the system. Qubits are listed in ascending order as in
-     * the TS tests, so qubits[0] is the high bit of the result, i.e. qubit i
-     * is index i of the n bit result bitstring.
+     * Fully measures the system, returning the world index (qubit i = bit i).
+     * measure puts qubits[0] in the high bit, so qubits are listed descending.
      */
-    fun measure(): Int = qc.measure((0 until qc.qubits).toList())
+    fun measure(): Int = qc.measure((qc.qubits - 1 downTo 0).toList())
 }
 
 enum class Direction { FORWARD, REVERSE }

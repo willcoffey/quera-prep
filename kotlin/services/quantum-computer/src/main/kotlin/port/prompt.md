@@ -36,5 +36,5 @@ Kotlin. Don't add new optimizations.
 `measure()` should simply fully measure. Make a minimal class that exports
 these methods, wrapping the port to shape the input.
 
-Follow bit ordering standards from the typescript test file
+`measure()` returns the world index (qubit i = bit i).
 
