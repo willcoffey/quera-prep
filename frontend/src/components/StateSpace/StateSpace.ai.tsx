@@ -28,16 +28,19 @@ export function StateSpace({
     () => (showResults ? countResults(results ?? [], 1 << qubits) : undefined),
     [showResults, results, qubits],
   );
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const empty = useEmptyColor(canvasRef);
   // stateVector is the same array after every gate, so version is the dep.
   const colors = useMemo(
-    () => (counts ? countColors(counts) : cellColors(stateVector)),
-    [counts, stateVector, version],
+    () => !empty ? [] : counts
+      ? countColors(counts, empty)
+      : cellColors(stateVector, empty),
+    [counts, stateVector, version, empty],
   );
   const order = useMemo(
     () => (counts ? countOrder(counts) : drawOrder(stateVector)),
     [counts, stateVector, version],
   );
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const size = useDevicePixelSize(canvasRef);
   const transition = useRef<Transition>(null);
   const selectionKey = `${qubits}:${selectedQubits.join()}`;
@@ -45,7 +48,7 @@ export function StateSpace({
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx || !size) return;
+    if (!canvas || !ctx || !size || !empty) return;
     canvas.width = size.width;
     canvas.height = size.height;
 
@@ -73,12 +76,12 @@ export function StateSpace({
     const tick = () => {
       const t = transition.current!;
       const p = progress(t, performance.now());
-      draw(ctx, size, colors, order, t, p, gridLines);
+      draw(ctx, size, empty.css, colors, order, t, p, gridLines);
       if (p < 1) frame = requestAnimationFrame(tick);
     };
     tick();
     return () => cancelAnimationFrame(frame);
-  }, [size, colors, order, selectionKey, gridLines]);
+  }, [size, empty, colors, order, selectionKey, gridLines]);
 
   return (
     <div className="StateSpace">
@@ -94,6 +97,28 @@ export function StateSpace({
       />
     </div>
   );
+}
+
+interface Oklab { L: number; a: number; b: number; css: string }
+
+/**
+ * The canvas's `--empty` in OKLab, read once on mount. Cells fade into it
+ * at zero brightness and it fills the background, so the gaps that open
+ * between moving cells match the empty cells around them.
+ */
+function useEmptyColor(ref: React.RefObject<HTMLCanvasElement | null>) {
+  const [empty, setEmpty] = useState<Oklab>();
+  useEffect(() => {
+    const ctx = ref.current?.getContext("2d");
+    if (!ctx) return;
+    // Let the canvas normalize any CSS color to #rrggbb
+    ctx.fillStyle = getComputedStyle(ctx.canvas).getPropertyValue("--empty");
+    const hex = String(ctx.fillStyle);
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const { L, a, b: bb } = srgbToOklab(r, g, b);
+    setEmpty({ L, a, b: bb, css: oklabToCss(L, a, bb) });
+  }, [ref]);
+  return empty;
 }
 
 /** Canvas size in device pixels, tracked with a ResizeObserver. */
@@ -204,7 +229,7 @@ function reducedMotion() {
  * to the total, since the simulator's state isn't normalized. Color shows
  * phase.
  */
-function cellColors(amplitudes: Float64Array) {
+function cellColors(amplitudes: Float64Array, empty: Oklab) {
   const worlds = amplitudes.length / 2;
   const range = Math.log2(worlds) + 2; // halvings from full to empty
   let total = 0;
@@ -214,7 +239,7 @@ function cellColors(amplitudes: Float64Array) {
     const im = amplitudes[2 * i + 1];
     const p = (re * re + im * im) / (total || 1);
     const brightness = Math.min(1, Math.max(0, 1 + Math.log2(p) / range));
-    return complexColor(brightness, Math.atan2(im, re));
+    return complexColor(empty, brightness, Math.atan2(im, re));
   });
 }
 
@@ -236,12 +261,12 @@ function countResults(results: number[], worlds: number) {
 /** Measured frequency on the same log scale and lightness ramp as
  *  cellColors, without hue since runs have no phase. A result seen on every
  *  run matches a certain amplitude; one never seen matches an empty cell. */
-function countColors(counts: Uint32Array) {
+function countColors(counts: Uint32Array, empty: Oklab) {
   const range = Math.log2(counts.length) + 2;
   const total = counts.reduce((a, b) => a + b, 0) || 1;
   return Array.from(counts, (c) => {
     const brightness = Math.min(1, Math.max(0, 1 + Math.log2(c / total) / range));
-    return complexColor(brightness, 0, 0);
+    return complexColor(empty, brightness, 0, 0);
   });
 }
 
@@ -253,6 +278,7 @@ function countOrder(counts: Uint32Array) {
 function draw(
   ctx: CanvasRenderingContext2D,
   { width, height }: { width: number; height: number },
+  background: string,
   colors: string[],
   order: number[],
   t: Transition,
@@ -260,7 +286,8 @@ function draw(
   gridLines: boolean,
 ) {
   const css = getComputedStyle(ctx.canvas);
-  ctx.fillStyle = css.getPropertyValue("--empty");
+  // Same string as a zero brightness cell, so gaps never show
+  ctx.fillStyle = background;
   ctx.fillRect(0, 0, width, height);
 
   // Snap cell edges to whole device pixels so gridlines stay crisp.
@@ -309,14 +336,36 @@ function draw(
  * Domain coloring in OKLCH, the perceptually uniform polar form of OKLab
  * (Björn Ottosson, 2020). Phase walks the hue circle at constant lightness
  * and chroma, an isoluminant cyclic map in the spirit of CET-C6/C7, so no
- * phase looks brighter than another. Brightness (0–1) raises lightness and
- * chroma from the panel background to full color. Phase 0 = red.
+ * phase looks brighter than another. Brightness (0–1) blends from the
+ * empty color (any tint fades out) to full lightness and chroma. Phase 0 =
+ * red.
  */
-function complexColor(t: number, phase: number, chroma = 0.13) {
-  const L = 0.28 + 0.47 * t;
+function complexColor(empty: Oklab, t: number, phase: number, chroma = 0.13) {
+  const L = empty.L + (0.75 - empty.L) * t;
   const C = chroma * t;
   const h = phase + (29 * Math.PI) / 180;
-  return oklabToCss(L, C * Math.cos(h), C * Math.sin(h));
+  return oklabToCss(
+    L,
+    empty.a * (1 - t) + C * Math.cos(h),
+    empty.b * (1 - t) + C * Math.sin(h),
+  );
+}
+
+/** 0–255 sRGB to OKLab, the inverse of oklabToCss. */
+function srgbToOklab(r8: number, g8: number, b8: number) {
+  const lin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const [r, g, b] = [lin(r8), lin(g8), lin(b8)];
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return {
+    L: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  };
 }
 
 function oklabToCss(L: number, a: number, b: number) {

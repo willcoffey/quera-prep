@@ -5,39 +5,20 @@
   align-items: stretch;
   gap: 0;
   place-content: normal;
-  font-size: 1rem;
+  /* 16px at a 48px key, scaling with it */
+  font-size: calc(var(--button) / 3);
   font-family: system-ui, sans-serif;
-  background: var(--base01);
-  color: var(--base05);
-  min-width: 0;
-}
-
-.AppBar-programId {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  margin-right: 4px;
-}
-
-.AppBar-programId textarea {
-  flex: 1;
-  min-width: 0;
-  resize: none;
-  overflow: hidden;
-  white-space: nowrap;
-  box-sizing: border-box;
-  height: 100%;
-  margin: 0;
-  padding: 0 8px;
-  border: none;
   background: var(--base00);
   color: var(--base05);
-  font: inherit;
-  font-family: ui-monospace, monospace;
-  line-height: var(--button);
+  min-width: 0;
 }
 
-.AppBar-programId textarea[data-focus-visible],
+/* Screen (Utility), filling the space left of the buttons */
+.AppBar-programId {
+  flex: 1 1 auto;
+  margin: var(--key-gap);
+}
+
 .AppBar-button[data-focus-visible] {
   outline: 2px solid var(--base0D);
   outline-offset: -2px;
@@ -45,13 +26,15 @@
 
 .AppBar-button {
   flex: 0 0 auto;
-  /* square --button from App.ai.css */
-  width: var(--button);
-  height: var(--button);
+  /* square --button cell from App.ai.css, key inset by --key-gap */
+  width: calc(var(--button) - 2 * var(--key-gap));
+  height: calc(var(--button) - 2 * var(--key-gap));
+  margin: var(--key-gap);
   padding: 0;
   display: grid;
   place-items: center;
   border: none;
+  border-radius: var(--key-radius);
   background: var(--base01);
   color: var(--base05);
   box-shadow: var(--bevel-out);

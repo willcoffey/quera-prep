@@ -29,6 +29,8 @@
 }
 
 .Keypad-empty {
+  margin: var(--key-gap);
+  border-radius: var(--key-radius);
   background: var(--base01);
   opacity: 0.5;
 }
@@ -37,7 +39,9 @@
   position: relative;
   display: grid;
   place-items: center;
+  margin: var(--key-gap);
   border: none;
+  border-radius: var(--key-radius);
   padding: 0;
   box-shadow: var(--bevel-out);
   font: inherit;
@@ -53,7 +57,7 @@
 
 /* darker shade for controls */
 .Keypad-control {
-  background: var(--base00);
+  background: var(--key-dark);
   color: var(--base04);
 }
 

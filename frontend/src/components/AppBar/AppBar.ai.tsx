@@ -1,15 +1,14 @@
 import "./AppBar.ai.css";
-import { useEffect, useRef, type ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import type { DisplayOptions } from "../../App";
 import type { CoreEvent } from "../../Core";
+import { Screen } from "../Utility/Screen.ai";
 import {
   Button,
   Menu,
   MenuItem,
   MenuTrigger,
   Popover,
-  TextArea,
-  TextField,
   ToggleButton,
   Tooltip,
   TooltipTrigger,
@@ -181,42 +180,22 @@ function Tip({ text, children }: { text: string; children: ReactNode }) {
   );
 }
 
-export function AppBar({
+// memo: skips the parent's re-renders while props are unchanged
+export const AppBar = memo(function AppBar({
   programId,
   dispatch,
   displayOptions,
   setDisplayOptions,
 }: AppBarProps) {
-  // Keep the whole id selected when it changes while focused
-  const programIdRef = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const el = programIdRef.current;
-    if (el && document.activeElement === el) el.select();
-  }, [programId]);
-
   return (
     <div className="AppBar">
-      <TextField
+      <Screen
         className="AppBar-programId"
         aria-label="Program ID"
         value={programId}
-        isReadOnly
-      >
-        <TextArea
-          ref={programIdRef}
-          rows={1}
-          spellCheck={false}
-          // Always select all. Keyboard focus selects in onFocus. Mouse
-          // presses skip the default caret placement, which would otherwise
-          // collapse the selection, including clicks while already focused
-          onFocus={(e) => e.currentTarget.select()}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.currentTarget.focus();
-            e.currentTarget.select();
-          }}
-        />
-      </TextField>
+        placeholder="no program"
+        mono
+      />
 
       <Tip text="Grid lines">
         <ToggleButton
@@ -281,4 +260,4 @@ export function AppBar({
       </MenuTrigger>
     </div>
   );
-}
+});

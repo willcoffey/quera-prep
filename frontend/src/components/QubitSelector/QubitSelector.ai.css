@@ -1,21 +1,23 @@
 /* `.App > *` in App.ai.css sets placeholder styles; the doubled class
    outranks it regardless of stylesheet order. */
 .QubitSelector.QubitSelector {
-  /* 2 rows of --button (App.ai.css): order + last, then qubit buttons */
+  /* order + last screens (--screen), then a --button row of qubits
+     (App.ai.css) */
   display: grid;
-  grid-template-rows: repeat(2, var(--button));
+  grid-template-rows: var(--screen) var(--button);
   place-content: normal;
   font-size: 1rem;
   font-family: system-ui, sans-serif;
-  background: var(--base01);
+  background: var(--base00);
   color: var(--base05);
   min-width: 0;
 }
 
-/* square --button, shrinking so all 8 fit; right aligned like the Keypad */
+/* 8 square --button cells, the keyboard width; right aligned like the
+   Keypad. */
 .QubitSelector-buttons {
   display: grid;
-  grid-template-columns: repeat(8, min(var(--button), 100% / 8));
+  grid-template-columns: repeat(8, var(--button));
   justify-content: end;
   font-size: calc(var(--button) * 0.375);
 }
@@ -23,61 +25,9 @@
 .QubitSelector-info {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  gap: calc(2 * var(--key-gap));
+  padding: var(--key-gap);
   min-width: 0;
-}
-
-/* label stacked over its value */
-.QubitSelector-field {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  background: var(--base00);
-  box-shadow: inset -1px 0 0 var(--base01);
-}
-
-.QubitSelector-label {
-  padding: 0 8px;
-  font-size: 0.625rem;
-  line-height: 1;
-  color: var(--base09);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.QubitSelector-field textarea {
-  min-width: 0;
-  resize: none;
-  overflow: hidden;
-  white-space: nowrap;
-  box-sizing: border-box;
-  height: auto;
-  margin: 0;
-  padding: 0 8px;
-  border: none;
-  background: transparent;
-  color: var(--base05);
-  font: inherit;
-  line-height: 1.25;
-}
-
-.QubitSelector-field textarea::placeholder {
-  color: var(--base03);
-}
-
-.QubitSelector-selection textarea {
-  font-family: ui-monospace, monospace;
-  color: var(--base09);
-}
-
-.QubitSelector-last textarea {
-  font-family: system-ui, sans-serif;
-  font-size: 0.9375rem;
-}
-
-.QubitSelector-field textarea[data-focus-visible] {
-  outline: 2px solid var(--base0D);
-  outline-offset: -2px;
 }
 
 .QubitSelector-tooltip {
@@ -92,7 +42,9 @@
   position: relative;
   display: grid;
   place-items: center;
+  margin: var(--key-gap);
   border: none;
+  border-radius: var(--key-radius);
   background: var(--base01);
   color: var(--base05);
   box-shadow: var(--bevel-out);

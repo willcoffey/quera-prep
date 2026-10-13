@@ -1,13 +1,11 @@
 import "./QubitSelector.ai.css";
 import {
-  Label,
-  TextArea,
-  TextField,
   ToggleButton,
   Tooltip,
   TooltipTrigger,
 } from "react-aria-components";
 import type { CoreEvent } from "../../Core";
+import { Screen } from "../Utility/Screen.ai";
 
 interface QubitSelectorProps {
   selectedQubits: number[];
@@ -35,18 +33,13 @@ export function QubitSelector({
   return (
     <div className="QubitSelector">
       <div className="QubitSelector-info">
-        <Field
-          className="QubitSelector-selection"
+        <Screen
           label="Order"
           value={selectedQubits.join(" ")}
           placeholder="none"
+          mono
         />
-        <Field
-          className="QubitSelector-last"
-          label="Last"
-          value={lastInstruction}
-          placeholder="none"
-        />
+        <Screen label="Last" value={lastInstruction} placeholder="none" />
       </div>
       <div className="QubitSelector-buttons" role="group" aria-label="Qubits">
         {QUBITS.map((qubit) => {
@@ -77,33 +70,5 @@ export function QubitSelector({
         })}
       </div>
     </div>
-  );
-}
-
-/** Read-only, single line, labeled. */
-function Field({
-  className,
-  label,
-  value,
-  placeholder,
-}: {
-  className: string;
-  label: string;
-  value: string;
-  placeholder: string;
-}) {
-  return (
-    <TextField
-      className={`QubitSelector-field ${className}`}
-      value={value}
-      isReadOnly
-    >
-      <Label className="QubitSelector-label">{label}</Label>
-      <TextArea
-        rows={1}
-        spellCheck={false}
-        placeholder={placeholder}
-      />
-    </TextField>
   );
 }

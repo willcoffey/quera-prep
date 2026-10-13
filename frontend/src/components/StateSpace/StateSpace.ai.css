@@ -8,6 +8,9 @@
   position: relative;
   display: block;
   background: var(--base01);
+  /* matches the Keyboard's corners; clips the canvas */
+  border-radius: var(--key-radius);
+  overflow: hidden;
 }
 
 .StateSpace-canvas {

@@ -1,21 +1,32 @@
-/* base16 Default Dark */
+/* base16, derived from a Casio fx-991ES PLUS. Greys lean blue like its
+   navy body; accents reuse the roles its key labels already teach. */
 :root {
-  --base00: #181818;
-  --base01: #282828;
-  --base02: #383838;
-  --base03: #585858;
-  --base04: #b8b8b8;
-  --base05: #d8d8d8;
-  --base06: #e8e8e8;
-  --base07: #f8f8f8;
-  --base08: #ab4642;
-  --base09: #dc9656;
-  --base0A: #f7ca88;
-  --base0B: #a1b56c;
-  --base0C: #86c1b9;
-  --base0D: #7cafc2;
-  --base0E: #ba8baf;
-  --base0F: #a16946;
+  --base00: #1a1d26; /* bg: navy-black case */
+  --base01: #2c303a; /* panel/keys: dark function keys */
+  --base02: #3d424d; /* selected: pressed key */
+  --base03: #5f6673; /* muted: disabled legends */
+  --base04: #9aa2ad; /* dim fg: operator key grey, 5:1 on keys */
+  --base05: #d6dbe0; /* fg: white key legends */
+  --base06: #e8ecef; /* light fg: tooltips */
+  --base07: #d8ebd8; /* light bg: LCD */
+  --base08: #e0605a; /* error: warm red, apart from magenta */
+  --base09: #e3c94a; /* toggled on: SHIFT yellow, a modifier state */
+  --base0A: #e8a93c; /* warning: amber, distinct from SHIFT */
+  --base0B: #7faf4a; /* success: AC/DEL green */
+  --base0C: #4fa3d8; /* info: BASE-N label blue */
+  --base0D: #6fb3e0; /* focus: lighter blue, 5:1 on keys */
+  --base0E: #d4559a; /* accent: ALPHA magenta */
+  --base0F: #b07a50; /* accent: solar panel brown */
+}
+
+/* Calculator-inspired overrides; temporary, for tweaking */
+:root {
+  --lcd-bg: var(--base07); /* QubitSelector order/last displays */
+  --lcd-ink: #1e2a44; /* LCD text and focus ring */
+  --lcd-ink-dim: #4a5a70; /* LCD labels and placeholders */
+  --key-black: #0e0f13; /* Keyboard INV/MAP, calc's glossy black keys */
+  --key-green: #7aac3e; /* Keyboard AC/DEL, calc's AC/DEL green */
+  --key-green-ink: var(--base00); /* AC/DEL legend; white is ~2.5:1 */
 }
 
 body { margin: 0; background: #000; }
@@ -23,13 +34,23 @@ body { margin: 0; background: #000; }
 /* rows from the sketch: a row of buttons, square state, 2 rows of buttons,
    keypad gets the rest (at least 2 rows) */
 .App {
-  /* Shared square button size: 48px, shrinking (e.g. when zoomed) so the
-     7 gapless keypad columns fit the width, but never below the 24px
-     WCAG AA minimum. Unregistered, so cqi resolves where it's used,
-     against this container. */
-  --button: clamp(24px, 100cqi / 7, 48px);
-  /* Button grids have no gaps; a bevel separates the buttons. Raised
-     by default, inset when pressed or toggled on. */
+  /* Shared square button cell: an 8th of the square, so the keyboard
+     spans it and keys grow with the screen, but never below the 24px WCAG
+     AA target. Unregistered, so cqi resolves where it's used, against this
+     container. */
+  --button: max(24px, var(--square) / 8);
+  /* LCD screen row height: room for label + value, short of 2 rows */
+  --screen: calc(var(--button) * 1.4);
+  /* Keys sit inside their cell, inset by --key-gap, like calculator keys
+     on the case; the cell still sets the target spacing. */
+  --key-gap: 3px;
+  --key-radius: 4px;
+  /* StateSpace side, the Keyboard matches it. Full width, or what fits the
+     height: square + 4 button rows + a screen row (5.4 buttons = 5.4/8
+     square) + 16px = padding (2×4) + gaps between rows (2×4). Written
+     without --button, which depends on it. */
+  --square: min(100cqi, (100dvh - 16px) / (1 + 5.4 / 8));
+  /* Raised by default, inset when pressed or toggled on. */
   --bevel-out:
     inset 1px 1px 0 rgb(255 255 255 / 0.08),
     inset -1px -1px 0 rgb(0 0 0 / 0.6);
@@ -41,8 +62,7 @@ body { margin: 0; background: #000; }
   grid-template:
     "appbar" auto
     "state" auto
-    "qubits" auto
-    "keypad" 1fr
+    "keyboard" 1fr
     / 1fr;
   gap: 4px;
   padding: 4px;
@@ -58,14 +78,11 @@ body { margin: 0; background: #000; }
 }
 
 .AppBar { grid-area: appbar; }
-.QubitSelector { grid-area: qubits; }
-.Keypad { grid-area: keypad; }
+.Keyboard { grid-area: keyboard; }
 
-/* square; shrinks so the other rows fit: 5 button rows, plus 20px =
-   padding (2×4) + gaps between rows (3×4) */
 .StateSpace {
   grid-area: state;
-  width: min(100%, 100dvh - 20px - 5 * var(--button));
+  width: var(--square);
   aspect-ratio: 1;
   justify-self: center;
 }

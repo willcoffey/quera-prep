@@ -1,0 +1,142 @@
+/* `.App > *` in App.ai.css sets placeholder styles; the doubled class
+   outranks it regardless of stylesheet order. */
+.Keyboard.Keyboard {
+  /* 8 square --button columns (App.ai.css); a --screen row, then 3 rows of
+     keys. As wide as the StateSpace square, keys centered in it; never
+     narrower than the keys, for short screens. */
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(8, var(--button));
+  grid-template-rows: var(--screen) repeat(3, var(--button));
+  place-content: start center;
+  place-self: start center;
+  width: var(--square);
+  min-width: min-content;
+  box-sizing: border-box;
+  border-radius: var(--key-radius);
+  font-size: calc(var(--button) * 0.4);
+  font-family: system-ui, sans-serif;
+  background: var(--base00);
+  color: var(--base05);
+  min-width: 0;
+  min-height: 0;
+}
+
+.Keyboard-screen {
+  grid-column: span 4;
+  margin: var(--key-gap);
+  /* 16px at a 48px key, scaling with it */
+  font-size: calc(var(--button) / 3);
+}
+
+/* Groups keep their semantics but share the parent's grid */
+.Keyboard-qubits,
+.Keyboard-gates,
+.Keyboard-controls {
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-template-rows: subgrid;
+}
+
+.Keyboard-qubits { grid-area: 2 / 1 / 3 / -1; }
+
+/* Separator between qubits and gates: absolutely positioned against the
+   gate rows' grid area, centered in the gap between key rows */
+.Keyboard::before {
+  content: "";
+  grid-area: 3 / 1 / 4 / -1;
+  position: absolute;
+  top: -0.5px;
+  left: var(--key-gap);
+  right: var(--key-gap);
+  height: 1px;
+  background: var(--base03);
+}
+.Keyboard-gates { grid-area: 3 / 2 / 5 / 7; }
+.Keyboard-controls { grid-area: 3 / 7 / 5 / -1; }
+
+.Keyboard-key,
+.Keyboard-empty {
+  margin: var(--key-gap);
+  border-radius: var(--key-radius);
+}
+
+.Keyboard-empty {
+  background: var(--base01);
+  opacity: 0.5;
+}
+
+/* Each variant sets --key-bg; hover, press and toggled on lighten it */
+.Keyboard-key {
+  --key-bg: var(--base01);
+  position: relative;
+  display: grid;
+  place-items: center;
+  border: none;
+  padding: 0;
+  background: var(--key-bg);
+  color: var(--base05);
+  box-shadow: var(--bevel-out);
+  font: inherit;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* INV, MAP: glossy black like the calc's function keys */
+.Keyboard-mode {
+  --key-bg: var(--key-black);
+  background:
+    linear-gradient(rgb(255 255 255 / 0.07), transparent 45%),
+    var(--key-bg);
+  color: var(--base06);
+}
+
+/* AC, DEL: green like the calc's */
+.Keyboard-clear {
+  --key-bg: var(--key-green);
+  color: var(--key-green-ink);
+}
+
+.Keyboard-key[data-hovered],
+.Keyboard-key[data-pressed],
+.Keyboard-key[data-selected] {
+  background: color-mix(in oklab, var(--key-bg), white 10%);
+}
+
+.Keyboard-key[data-pressed],
+.Keyboard-key[data-selected] {
+  box-shadow: var(--bevel-in);
+}
+
+.Keyboard-key[data-selected] {
+  color: var(--base09);
+}
+
+.Keyboard-key[data-disabled] {
+  color: var(--base03);
+  cursor: default;
+}
+
+.Keyboard-key[data-focus-visible] {
+  outline: 2px solid var(--base0D);
+  outline-offset: -2px;
+}
+
+/* selection order or inverse dagger, top right; SHIFT yellow as both
+   mark a modifier being on */
+.Keyboard-corner {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 0.5em;
+  color: var(--base09);
+}
+
+.Keyboard-tooltip {
+  padding: 4px 8px;
+  background: var(--base02);
+  color: var(--base06);
+  border: 1px solid var(--base03);
+  font: 0.875rem system-ui, sans-serif;
+}

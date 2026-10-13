@@ -46,13 +46,21 @@ export class Core {
           ));
           // Delete any previous results, since the program has
           // changed
-          delete this.state.results
+          delete this.state.results;
+          this.state.lastInstruction = {
+            ins: event.args,
+            qubits: this.state.selectedQubits,
+          };
+          // updateProgramId returns a promise, must be returned
           return Core.updateProgramId(this.state);
         });
 
         // Add fractional updates to the chain, so that gates appear continous
         for (let i = 0; i < GATE_ANIMATION_STEPS; i++) {
-          this.addToChain(() => Core.applyGateStep(this.state, event.args));
+          this.addToChain(async () => {
+            Core.applyGateStep(this.state, event.args);
+            await sleep(GATE_ANIMATION_TIME);
+          });
         }
         this.addToChain(() => {
           this.state.status = "COMPLETE";
@@ -93,6 +101,7 @@ export class Core {
         //console.log(event.action, event.args);
     }
 
+    // Triggers for ANY change, and does not provide source
     this.onChange();
   }
 
@@ -164,7 +173,7 @@ export class Core {
    * Records the gate into the program and executes it over `steps` so that it
    * can be smoothly animated
    */
-  static async applyGateStep(state: CoreState, ins: GateInstruction) {
+  static applyGateStep(state: CoreState, ins: GateInstruction) {
     if (!isGate(ins.gate)) throw "Invalid Gate";
     const gate = Gates[ins.gate];
     const direction = ins.inverse ? "reverse" : "forward";
@@ -172,9 +181,7 @@ export class Core {
     // Capture currrent chait and selection since they change while this id waiting
     const qubits = state.selectedQubits;
 
-    state.lastInstruction = ins.gate;
     state.qc.applyFractionalGate(qubits, gate, direction, GATE_ANIMATION_STEPS);
-    await sleep(GATE_ANIMATION_TIME);
   }
 
   /**
@@ -201,7 +208,7 @@ interface CoreState {
   programId: string;
   selectedQubits: number[];
   status: "PROCESSING" | "COMPLETE";
-  lastInstruction?: string;
+  lastInstruction?: { ins: GateInstruction; qubits: number[] };
   results?: number[];
 }
 
