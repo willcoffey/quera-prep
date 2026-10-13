@@ -137,7 +137,30 @@ function mulberry32(seed: number) {
   };
 }
 
+/**
+ * Phase oracle interference: H on every qubit, a hypergraph phase oracle of
+ * multi-controlled Zs, then H again. The oracle phases show as colour
+ * mid-run; the final H layer turns them into the Walsh spectrum of the
+ * Boolean function f(x) = x0..x4 ⊕ x3..x7 ⊕ x0·x7 ⊕ x1..x6.
+ * Answer: worlds 0, 1, 128, 129 (~25/19/19/17%), 93 others faint, the
+ * rest dark.
+ */
+function phaseOracle(): CoreEvent[] {
+  const qubits = [0, 1, 2, 3, 4, 5, 6, 7];
+  const terms = [[0, 1, 2, 3, 4], [3, 4, 5, 6, 7], [0, 7], [1, 2, 3, 4, 5, 6]];
+  // k qubit controlled Z is named with k - 1 Cs, e.g. CCZ for 3
+  const oracle = terms.flatMap((qs) =>
+    [select(qs), apply("C".repeat(qs.length - 1) + "Z")]);
+  return [
+    ...each("Hadamard", qubits),
+    ...oracle,
+    ...each("Hadamard", qubits),
+    select([]),
+  ];
+}
+
 const SCRIPTS: Record<string, () => CoreEvent[]> = {
+  "Phase oracle (8 qubits)": phaseOracle,
   "Grover search (3 qubits)": grover,
   "Bernstein–Vazirani (7 qubits)": bernsteinVazirani,
   "Deutsch–Jozsa (3 qubits)": deutschJozsa,
@@ -213,9 +236,11 @@ export function AppBar({
           className="AppBar-button AppBar-toggle"
           aria-label="Simulation results"
           isSelected={displayOptions.showResults}
-          onChange={(showResults) =>
-            setDisplayOptions({ ...displayOptions, showResults })
-          }
+          onChange={(showResults) => {
+            setDisplayOptions({ ...displayOptions, showResults });
+            // Turning results on refreshes them for the current program
+            if (showResults) dispatch({ action: "fetch-results", args: {} });
+          }}
         >
           <MonitorCogIcon aria-hidden />
         </ToggleButton>

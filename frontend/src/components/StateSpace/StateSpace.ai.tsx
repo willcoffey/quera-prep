@@ -10,6 +10,8 @@ interface StateSpaceProps {
   stateVector: Float64Array;
   /** changes whenever stateVector's contents do */
   version: number;
+  /** measured basis state of each run, shown when showResults is on */
+  results?: number[];
 }
 
 export function StateSpace({
@@ -17,16 +19,28 @@ export function StateSpace({
   selectedQubits,
   stateVector,
   version,
+  results,
 }: StateSpaceProps) {
   const qubits = Math.round(Math.log2(stateVector.length / 2));
+  const { gridLines, showResults } = displayOptions;
+  const counts = useMemo(
+    // The toggle decides the view; no results yet shows an empty grid
+    () => (showResults ? countResults(results ?? [], 1 << qubits) : undefined),
+    [showResults, results, qubits],
+  );
   // stateVector is the same array after every gate, so version is the dep.
-  const colors = useMemo(() => cellColors(stateVector), [stateVector, version]);
-  const order = useMemo(() => drawOrder(stateVector), [stateVector, version]);
+  const colors = useMemo(
+    () => (counts ? countColors(counts) : cellColors(stateVector)),
+    [counts, stateVector, version],
+  );
+  const order = useMemo(
+    () => (counts ? countOrder(counts) : drawOrder(stateVector)),
+    [counts, stateVector, version],
+  );
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const size = useDevicePixelSize(canvasRef);
   const transition = useRef<Transition>(null);
   const selectionKey = `${qubits}:${selectedQubits.join()}`;
-  const { gridLines } = displayOptions;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -72,7 +86,9 @@ export function StateSpace({
         ref={canvasRef}
         className="StateSpace-canvas"
         role="img"
-        aria-label={`State vector of ${qubits} qubits, ${1 << qubits} amplitudes, ` +
+        aria-label={(counts
+          ? `Results of ${results?.length ?? 0} runs over ${1 << qubits} basis states, `
+          : `State vector of ${qubits} qubits, ${1 << qubits} amplitudes, `) +
           `grouped by ${selectedQubits.length} selected ` +
           `qubit${selectedQubits.length === 1 ? "" : "s"}`}
       />
@@ -210,6 +226,30 @@ function drawOrder(amplitudes: Float64Array) {
     .sort((a, b) => mag(a) - mag(b));
 }
 
+/** How many runs measured each basis state. */
+function countResults(results: number[], worlds: number) {
+  const counts = new Uint32Array(worlds);
+  for (const r of results) if (r >= 0 && r < worlds) counts[r]++;
+  return counts;
+}
+
+/** Measured frequency on the same log scale and lightness ramp as
+ *  cellColors, without hue since runs have no phase. A result seen on every
+ *  run matches a certain amplitude; one never seen matches an empty cell. */
+function countColors(counts: Uint32Array) {
+  const range = Math.log2(counts.length) + 2;
+  const total = counts.reduce((a, b) => a + b, 0) || 1;
+  return Array.from(counts, (c) => {
+    const brightness = Math.min(1, Math.max(0, 1 + Math.log2(c / total) / range));
+    return complexColor(brightness, 0, 0);
+  });
+}
+
+/** Basis states by ascending count, so common results draw on top. */
+function countOrder(counts: Uint32Array) {
+  return Array.from(counts, (_, i) => i).sort((a, b) => counts[a] - counts[b]);
+}
+
 function draw(
   ctx: CanvasRenderingContext2D,
   { width, height }: { width: number; height: number },
@@ -236,13 +276,6 @@ function draw(
     for (let i = stepX; i < cols; i += stepX) ctx.fillRect(x(i) - (w >> 1), 0, w, height);
     for (let i = stepY; i < rows; i += stepY) ctx.fillRect(0, y(i) - (w >> 1), width, w);
   };
-  // Cell lines sit under the cells and show through the gaps between them,
-  // so moving cells pass over them.
-  if (gridLines) lines(1, 1, 1, css.getPropertyValue("--cell-line"));
-
-  // Inset each cell to leave exactly the line's pixels uncovered at rest.
-  const gap = gridLines ? lineWidth(1) : 0;
-  const before = gap - (gap >> 1);
   for (const i of order) {
     const row = t.from[2 * i] + (t.to.pos[2 * i] - t.from[2 * i]) * p;
     const col = t.from[2 * i + 1] + (t.to.pos[2 * i + 1] - t.from[2 * i + 1]) * p;
@@ -250,12 +283,15 @@ function draw(
     // rounding both edges of a fractional position makes cells wobble.
     const toRow = t.to.pos[2 * i];
     const toCol = t.to.pos[2 * i + 1];
-    const w = x(toCol + 1) - x(toCol) - gap;
-    const h = y(toRow + 1) - y(toRow) - gap;
+    const w = x(toCol + 1) - x(toCol);
+    const h = y(toRow + 1) - y(toRow);
     ctx.fillStyle = colors[i];
-    ctx.fillRect(Math.round(x(toCol) + (col - toCol) * width / cols) + before,
-      Math.round(y(toRow) + (row - toRow) * height / rows) + before, w, h);
+    ctx.fillRect(Math.round(x(toCol) + (col - toCol) * width / cols),
+      Math.round(y(toRow) + (row - toRow) * height / rows), w, h);
   }
+
+  // Cell lines draw over the cells, so they stay visible on moving cells too.
+  if (gridLines) lines(1, 1, 1, css.getPropertyValue("--cell-line"));
 
   // Partition lines cross-fade; they only mean something when groups span
   // several cells. The grid lines toggle hides them too.
@@ -264,7 +300,7 @@ function draw(
   for (const [l, alpha] of [[t.fromLines, 1 - p], [t.to, p]] as const) {
     if (!l.grouped || alpha <= 0) continue;
     ctx.globalAlpha = alpha;
-    lines(l.groupCols, l.groupRows, 2, groupLine);
+    lines(l.groupCols, l.groupRows, 4, groupLine);
   }
   ctx.globalAlpha = 1;
 }
@@ -276,9 +312,9 @@ function draw(
  * phase looks brighter than another. Brightness (0–1) raises lightness and
  * chroma from the panel background to full color. Phase 0 = red.
  */
-function complexColor(t: number, phase: number) {
+function complexColor(t: number, phase: number, chroma = 0.13) {
   const L = 0.28 + 0.47 * t;
-  const C = 0.13 * t;
+  const C = chroma * t;
   const h = phase + (29 * Math.PI) / 180;
   return oklabToCss(L, C * Math.cos(h), C * Math.sin(h));
 }

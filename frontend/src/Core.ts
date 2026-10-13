@@ -3,9 +3,9 @@
  */
 import { Gates, isGate, QuantumComputer } from "../../../quantum-computer/qc";
 
-const GATE_ANIMATION_STEPS = 60;
+const GATE_ANIMATION_STEPS = 30;
 const GATE_ANIMATION_TIME = 4;
-export const SELECT_ANIMATION_TIME = 100;
+export const SELECT_ANIMATION_TIME = 150;
 
 export class Core {
   state: CoreState;
@@ -44,6 +44,9 @@ export class Core {
             this.state.selectedQubits,
             event.args,
           ));
+          // Delete any previous results, since the program has
+          // changed
+          delete this.state.results
           return Core.updateProgramId(this.state);
         });
 
@@ -55,11 +58,27 @@ export class Core {
           this.state.status = "COMPLETE";
         });
         break;
+      case "run-job":
+        // Submits the task to the backend with 1000 requested runs
+        this.addToChain(() => {
+          Core.submitTask(
+            this.state.programId,
+            this.state.program.slice(),
+          ).catch(console.error);
+        });
+        break;
+      case "fetch-results":
+        // Read results for the current programId when this event
+        // is processed
+        this.addToChain(() => {
+          return Core.fetchResults(this.state).catch(console.error);
+        });
+        break;
       case "reset":
         this.eventChain.canceled = true;
         this.state = {
           qc: new QuantumComputer(8),
-          programId: "Lorem",
+          programId: "",
           program: [],
           selectedQubits: [],
           status: "COMPLETE",
@@ -69,15 +88,37 @@ export class Core {
           chain: Promise.resolve(),
         };
         break;
-
       default:
-        console.log(event.action, event.args);
+        return;
+        //console.log(event.action, event.args);
     }
 
     this.onChange();
   }
 
   /**
+   * Basic task submission to backend.
+   * No rate limiting, no retry. Simply throws on error.
+   */
+  static async submitTask(programId: string, program: string[]) {
+    if (!program.length) throw new Error("Empty program, not submitting task");
+    const idemKey = crypto.getRandomValues(new Uint8Array(32)).toHex();
+    const res = await fetch("/tasks/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        {
+          idemKey,
+          programId,
+          commands: program,
+          runs: 1000,
+        } satisfies CreateTaskBody,
+      ),
+    });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    return (await res.json()).data.taskId as number;
+  }
+
   /**
    * Add a function to the event chain. Useful for running async methods that
    * need to resolve in order. E.g. sleeping between frames
@@ -90,6 +131,16 @@ export class Core {
       await fn();
       this.onChange();
     });
+  }
+
+  static async fetchResults(state: CoreState) {
+    const { programId } = state;
+    const res = await fetch(`/tasks/results/${programId}`);
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    const results: number[] = (await res.json()).data.results;
+    // Ignore if the program changed while waiting
+    if (programId !== state.programId) return;
+    state.results = results;
   }
 
   /**
@@ -151,15 +202,32 @@ interface CoreState {
   selectedQubits: number[];
   status: "PROCESSING" | "COMPLETE";
   lastInstruction?: string;
+  results?: number[];
 }
 
 export type CoreEvent =
   | { action: "select-qubits"; args: { qubits: number[] } }
   | { action: "apply-gate"; args: GateInstruction }
   | { action: "reset"; args: {} }
-  | { action: "run-job"; args: {} };
+  | { action: "run-job"; args: {} }
+  | { action: "fetch-results"; args: {} };
 
 interface GateInstruction {
   gate: string;
   inverse?: boolean;
+}
+
+/**
+ * Request body for POST /tasks/
+ * mirrors CreateTaskBody in TaskManager.kt
+ */
+interface CreateTaskBody {
+  /** /[A-Z0-9]{64}/i */
+  idemKey: string;
+  /** SHA256 of NSV UTF-8 encoded commands. Hex format */
+  programId: string;
+  /** A list of command strings, representing gate operations */
+  commands: string[];
+  /** Positive number of runs */
+  runs: number;
 }

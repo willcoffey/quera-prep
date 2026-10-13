@@ -42,6 +42,7 @@ export function App() {
       <StateSpace
         displayOptions={displayOptions}
         selectedQubits={core.state.selectedQubits}
+        results={core.state.results}
         stateVector={core.state.qc.worlds}
         // Since stateVector is always the same float, trigger render
         version={renderCount}

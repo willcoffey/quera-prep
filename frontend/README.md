@@ -1,3 +1,13 @@
+# Future issues
+I'm omitting a lot of features to get this in a usable state, but they should be
+addressed some ways.
+
+No rate-limiting on job requests. And since they are triggered by the `run-job`
+event they could hypothetically end up in future replays. So executed even 
+faster than a user can click.
+
+Generic dump of `response.text()` on fetch errors, instead of using Spring 
+error message standards.
 
 
 # Playwright Setup

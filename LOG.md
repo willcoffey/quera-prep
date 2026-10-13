@@ -1,6 +1,11 @@
 # Current Summary
+Got MVP done, can get interface styled.
 
 ---
+# Mon Oct 12 09:44:54 PM EDT 2026
+Refactoring the backend into a message per run system to simplify things. 
+
+Need to get the programs to the simulator.
 
 # Sat Oct 10 07:46:11 PM EDT 2026
 Old claude simply called playwright via bash so I didn't notice the mcp server
