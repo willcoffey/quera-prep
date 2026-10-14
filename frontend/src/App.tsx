@@ -18,10 +18,9 @@ import { Keyboard } from "./components/Keyboard/Keyboard.ai";
 // UI Agnostic state & logic
 const core = new Core();
 const dispatch = core.dispatch.bind(core);
-  let pendingFrame = 0;
+let pendingFrame = 0;
 
 export function App() {
-
   /**
    * Setup a piece of state that gets changed whenever core state is
    * changed in order to trigger a re-render. Bit of a hack, not
@@ -43,41 +42,29 @@ export function App() {
     gridLines: true,
     showResults: false,
   });
-
   return (
     <div className="App">
-      <AppBar
-        programId={core.state.programId}
-        dispatch={dispatch}
-        displayOptions={displayOptions}
-        setDisplayOptions={setDisplayOptions}
-      />
-      <StateSpace
-        displayOptions={displayOptions}
-        selectedQubits={core.state.selectedQubits}
-        results={core.state.results}
-        stateVector={core.state.qc.worlds}
-        // Since stateVector is always the same float, trigger render
-        version={renderCount}
-      />
-      <Keyboard
-        selectedQubits={core.state.selectedQubits}
-        lastInstruction={core.state.lastInstruction}
-        dispatch={dispatch}
-      />
-      {
-        /*
-      <QubitSelector
-        selectedQubits={core.state.selectedQubits}
-        lastInstruction={core.state.lastInstruction}
-        dispatch={dispatch}
-      />
-      <Keypad
-        selectedQubits={core.state.selectedQubits}
-        dispatch={dispatch}
-      />
-      */
-      }
+      <div className="calc-body">
+        <AppBar
+          programId={core.state.programId}
+          dispatch={dispatch}
+          displayOptions={displayOptions}
+          setDisplayOptions={setDisplayOptions}
+        />
+        <StateSpace
+          displayOptions={displayOptions}
+          selectedQubits={core.state.selectedQubits}
+          results={core.state.results}
+          stateVector={core.state.qc.worlds}
+          // Since stateVector is always the same float, trigger render
+          version={renderCount}
+        />
+        <Keyboard
+          selectedQubits={core.state.selectedQubits}
+          lastInstruction={core.state.lastInstruction}
+          dispatch={dispatch}
+        />
+      </div>
     </div>
   );
 }

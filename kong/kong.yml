@@ -5,4 +5,11 @@ services:
     routes:                        # public paths that map to this service
       - paths:                     # prefix match, stripped before proxying
           - /tasks                 # /tasks/foo -> task-manager:8080/foo
+  # Statically built react frontend
+  - name: frontend                
+    url: http://frontend:80
+    routes:
+      - paths:
+          - /                     
+        strip_path: false          
 

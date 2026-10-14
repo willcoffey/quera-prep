@@ -1,22 +1,24 @@
-/* `.App > *` in App.ai.css sets placeholder styles; the doubled class
+/* `.calc-body > *` in App.ai.css sets placeholder styles; the doubled class
    outranks it regardless of stylesheet order. */
 .Keyboard.Keyboard {
-  /* 8 square --button columns (App.ai.css); a --screen row, then 3 rows of
-     keys. As wide as the StateSpace square, keys centered in it; never
-     narrower than the keys, for short screens. */
-  position: relative;
+  /* 8 square --button columns (App.ai.css); a --screen row, the qubit
+     row, a --section-gap row holding the separator, then 2 rows of keys.
+     As wide as the StateSpace square, keys centered in it; never narrower
+     than the keys, for short screens. */
   display: grid;
   grid-template-columns: repeat(8, var(--button));
-  grid-template-rows: var(--screen) repeat(3, var(--button));
+  grid-template-rows:
+    var(--screen) var(--button) var(--section-gap) repeat(2, var(--button));
   place-content: start center;
   place-self: start center;
   width: var(--square);
   min-width: min-content;
   box-sizing: border-box;
   border-radius: var(--key-radius);
-  font-size: calc(var(--button) * 0.4);
+  /* 21px at a 48px key; "INV" in monospace still clears the key */
+  font-size: calc(var(--button) * 0.44);
   font-family: system-ui, sans-serif;
-  background: var(--base00);
+  background: #000; /* seen through the key gaps, like body */
   color: var(--base05);
   min-width: 0;
   min-height: 0;
@@ -25,8 +27,8 @@
 .Keyboard-screen {
   grid-column: span 4;
   margin: var(--key-gap);
-  /* 16px at a 48px key, scaling with it */
-  font-size: calc(var(--button) / 3);
+  /* 21px at a 48px key, scaling with it */
+  font-size: calc(var(--button) * 0.44);
 }
 
 /* Groups keep their semantics but share the parent's grid */
@@ -40,20 +42,17 @@
 
 .Keyboard-qubits { grid-area: 2 / 1 / 3 / -1; }
 
-/* Separator between qubits and gates: absolutely positioned against the
-   gate rows' grid area, centered in the gap between key rows */
+/* Separator between qubits and gates, centered in its --section-gap row */
 .Keyboard::before {
   content: "";
   grid-area: 3 / 1 / 4 / -1;
-  position: absolute;
-  top: -0.5px;
-  left: var(--key-gap);
-  right: var(--key-gap);
-  height: 1px;
+  align-self: center;
+  margin: 0 var(--key-gap);
+  height: var(--section-line);
   background: var(--base03);
 }
-.Keyboard-gates { grid-area: 3 / 2 / 5 / 7; }
-.Keyboard-controls { grid-area: 3 / 7 / 5 / -1; }
+.Keyboard-gates { grid-area: 4 / 1 / 6 / 7; }
+.Keyboard-controls { grid-area: 4 / 7 / 6 / -1; }
 
 .Keyboard-key,
 .Keyboard-empty {
@@ -124,19 +123,23 @@
 }
 
 /* selection order or inverse dagger, top right; SHIFT yellow as both
-   mark a modifier being on */
+   mark a modifier being on. ≥ 13px at the 44px minimum key; line-height
+   1 keeps it in the top corner, clear of the label's subscript. */
 .Keyboard-corner {
   position: absolute;
-  top: 2px;
-  right: 4px;
-  font-size: 0.5em;
+  top: 0.15em;
+  right: 0.25em;
+  font-size: 0.68em;
+  font-weight: 600;
+  line-height: 1;
   color: var(--base09);
 }
 
+/* Portaled; 15px at a 48px key, see App.ai.css */
 .Keyboard-tooltip {
-  padding: 4px 8px;
+  padding: 0.3em 0.6em;
   background: var(--base02);
   color: var(--base06);
   border: 1px solid var(--base03);
-  font: 0.875rem system-ui, sans-serif;
+  font: max(0.875rem, var(--button) * 0.32) system-ui, sans-serif;
 }

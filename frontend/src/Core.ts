@@ -3,9 +3,9 @@
  */
 import { Gates, isGate, QuantumComputer } from "../../../quantum-computer/qc";
 
-const GATE_ANIMATION_STEPS = 30;
-const GATE_ANIMATION_TIME = 4;
-export const SELECT_ANIMATION_TIME = 150;
+const GATE_ANIMATION_STEPS = 25;
+const GATE_ANIMATION_TIME = 10;
+export const SELECT_ANIMATION_TIME = 550;
 
 export class Core {
   state: CoreState;
@@ -28,6 +28,16 @@ export class Core {
     };
   }
 
+  /**
+   * Polls and updates results until the app is no longer "active" which is when
+   * a certain number of requests have been made since a user event. short
+   * delay when # of runs changed, longer delay when no change
+   *
+   * This isn't good long term, just quick a dirty for MVP
+   */
+  pollResults() {
+  }
+
   // Single command bus for processing all external events
   dispatch(event: CoreEvent) {
     switch (event.action) {
@@ -35,6 +45,16 @@ export class Core {
         this.addToChain(() => Core.selectQubits(this.state, event.args.qubits));
         this.addToChain(() => sleep(SELECT_ANIMATION_TIME));
         break;
+      case "toggle-qubit":
+        // Generated: To allow spam clicking selections
+        this.addToChain(() => {
+          const s = this.state.selectedQubits;
+          const q = event.args.qubit;
+          Core.selectQubits(this.state, s.includes(q) ? s.filter((x) => x !== q) : [...s, q]);
+        });
+        this.addToChain(() => sleep(SELECT_ANIMATION_TIME));
+        break;
+
       case "apply-gate":
         this.state.status = "PROCESSING";
         // Program update also has to be on the chain since it depends on
@@ -217,7 +237,8 @@ export type CoreEvent =
   | { action: "apply-gate"; args: GateInstruction }
   | { action: "reset"; args: {} }
   | { action: "run-job"; args: {} }
-  | { action: "fetch-results"; args: {} };
+  | { action: "fetch-results"; args: {} }
+  | { action: "toggle-qubit"; args: { qubit: number } };
 
 interface GateInstruction {
   gate: string;

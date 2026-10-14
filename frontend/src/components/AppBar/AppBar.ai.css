@@ -1,22 +1,29 @@
-/* `.App > *` in App.ai.css sets placeholder styles; the doubled class
+/* `.calc-body > *` in App.ai.css sets placeholder styles; the doubled class
    outranks it regardless of stylesheet order. */
 .AppBar.AppBar {
   display: flex;
   align-items: stretch;
   gap: 0;
   place-content: normal;
-  /* 16px at a 48px key, scaling with it */
-  font-size: calc(var(--button) / 3);
+  /* 20px at a 48px key, scaling with it */
+  font-size: calc(var(--button) * 0.42);
   font-family: system-ui, sans-serif;
-  background: var(--base00);
+  background: #000; /* seen through the key gaps, like body */
   color: var(--base05);
   min-width: 0;
+  /* Part of the calculator: as wide as the StateSpace square */
+  width: var(--square);
+  justify-self: center;
 }
 
-/* Screen (Utility), filling the space left of the buttons */
+/* Screen (Utility), filling the space between Run and Menu. Dark like the
+   calc's solar panel: Screen reads --lcd-*, so retint just this one. */
 .AppBar-programId {
   flex: 1 1 auto;
   margin: var(--key-gap);
+  --lcd-bg: var(--panel-bg);
+  --lcd-ink: var(--panel-ink);
+  --lcd-ink-dim: var(--panel-ink-dim);
 }
 
 .AppBar-button[data-focus-visible] {
@@ -43,8 +50,8 @@
 }
 
 .AppBar-button svg {
-  width: 50%;
-  height: 50%;
+  width: 55%;
+  height: 55%;
 }
 
 .AppBar-button[data-hovered],
@@ -61,29 +68,43 @@
   color: var(--base09);
 }
 
+/* Tooltip and menu are portaled out of .App; --button still scales them,
+   see App.ai.css. 15px and 20px at a 48px key */
 .AppBar-tooltip {
-  padding: 4px 8px;
+  padding: 0.3em 0.6em;
   background: var(--base02);
   color: var(--base06);
   border: 1px solid var(--base03);
-  font: 0.875rem system-ui, sans-serif;
+  font: max(0.875rem, var(--button) * 0.32) system-ui, sans-serif;
 }
 
 .AppBar-popover {
   background: var(--base01);
   color: var(--base05);
   border: 1px solid var(--base03);
-  min-width: 160px;
+  border-radius: var(--key-radius);
+  min-width: calc(var(--button) * 4);
+  font-size: max(1rem, var(--button) * 0.42);
   font-family: system-ui, sans-serif;
 }
 
 .AppBar-menu {
   outline: none;
-  padding: 4px 0;
+  padding: 0.25em 0;
+}
+
+/* Section label in the accent (ALPHA magenta); not focusable */
+.AppBar-menuHeader {
+  padding: 0.5em 0.75em 0.3em;
+  font-size: 0.85em;
+  font-weight: 700;
+  color: var(--base0E);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .AppBar-menuItem {
-  padding: 8px 12px;
+  padding: 0.5em 0.75em;
   cursor: pointer;
   outline: none;
 }

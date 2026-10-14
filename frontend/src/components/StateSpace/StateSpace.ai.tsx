@@ -195,7 +195,8 @@ interface Transition {
   duration: number;
 }
 
-/** Eased progress, 0 → 1, CSS `ease` timing. */
+/** Eased progress, 0 → 1, CSS `ease-in-out` timing: cells start slowly and
+    build speed, rather than jumping off the mark. */
 function progress({ start, duration }: Transition, now: number) {
   return duration > 0 ? ease(Math.min(1, (now - start) / duration)) : 1;
 }
@@ -205,17 +206,18 @@ function currentPositions(t: Transition, now: number) {
   return t.from.map((v, i) => v + (t.to.pos[i] - v) * p);
 }
 
-/** CSS `ease` = cubic-bezier(0.25, 0.1, 0.25, 1). Solve x(s) = x, return y(s). */
+/** CSS `ease-in-out` = cubic-bezier(0.42, 0, 0.58, 1). Solve x(s) = x,
+    return y(s). */
 function ease(x: number) {
   const bezier = (s: number, p1: number, p2: number) =>
     3 * (1 - s) ** 2 * s * p1 + 3 * (1 - s) * s ** 2 * p2 + s ** 3;
   let lo = 0, hi = 1, s = x;
   for (let i = 0; i < 20; i++) {
     s = (lo + hi) / 2;
-    if (bezier(s, 0.25, 0.25) < x) lo = s;
+    if (bezier(s, 0.42, 0.58) < x) lo = s;
     else hi = s;
   }
-  return bezier(s, 0.1, 1);
+  return bezier(s, 0, 1);
 }
 
 function reducedMotion() {
@@ -225,9 +227,9 @@ function reducedMotion() {
 /**
  * Brightness is probability on a log scale, so each halving dims a cell by
  * the same step: certain = full, an even spread over all 2^n worlds = 2/(n+2),
- * and anything below a quarter of that = empty. Probabilities are relative
- * to the total, since the simulator's state isn't normalized. Color shows
- * phase.
+ * and anything below a quarter of that fades to a dim floor, so tiny but
+ * real amplitudes stay visible. Probabilities are relative to the total,
+ * since the simulator's state isn't normalized. Color shows phase.
  */
 function cellColors(amplitudes: Float64Array, empty: Oklab) {
   const worlds = amplitudes.length / 2;
@@ -238,9 +240,20 @@ function cellColors(amplitudes: Float64Array, empty: Oklab) {
     const re = amplitudes[2 * i];
     const im = amplitudes[2 * i + 1];
     const p = (re * re + im * im) / (total || 1);
-    const brightness = Math.min(1, Math.max(0, 1 + Math.log2(p) / range));
-    return complexColor(empty, brightness, Math.atan2(im, re));
+    return complexColor(empty, brightnessOf(p, range), Math.atan2(im, re));
   });
+}
+
+/** At or below this probability a cell is empty: float noise, not a state. */
+const NOISE_FLOOR = 1e-9;
+/** Lowest brightness of any cell above the noise floor: ~1.3:1 contrast
+ *  against the empty color, clearly a cell with a hint of phase. */
+const MIN_BRIGHTNESS = 0.15;
+
+/** Log-scale brightness over `range` halvings, floored for real amplitudes. */
+function brightnessOf(p: number, range: number) {
+  if (p <= NOISE_FLOOR) return 0;
+  return Math.min(1, Math.max(MIN_BRIGHTNESS, 1 + Math.log2(p) / range));
 }
 
 /** Basis states by ascending magnitude. Moving cells overlap, so drawing
@@ -260,14 +273,13 @@ function countResults(results: number[], worlds: number) {
 
 /** Measured frequency on the same log scale and lightness ramp as
  *  cellColors, without hue since runs have no phase. A result seen on every
- *  run matches a certain amplitude; one never seen matches an empty cell. */
+ *  run matches a certain amplitude; one never seen matches an empty cell,
+ *  and one seen even once is at least dimly visible. */
 function countColors(counts: Uint32Array, empty: Oklab) {
   const range = Math.log2(counts.length) + 2;
   const total = counts.reduce((a, b) => a + b, 0) || 1;
-  return Array.from(counts, (c) => {
-    const brightness = Math.min(1, Math.max(0, 1 + Math.log2(c / total) / range));
-    return complexColor(empty, brightness, 0, 0);
-  });
+  return Array.from(counts, (c) =>
+    complexColor(empty, brightnessOf(c / total, range), 0, 0));
 }
 
 /** Basis states by ascending count, so common results draw on top. */
@@ -286,9 +298,20 @@ function draw(
   gridLines: boolean,
 ) {
   const css = getComputedStyle(ctx.canvas);
-  // Same string as a zero brightness cell, so gaps never show
+  // 0 at rest, 1 from 15% to 85% of a move's progress. Mid-move, cells
+  // shrink to 80% over the cell line color, a subtle border, so even
+  // identical empty cells read as separate tiles sliding into place.
+  const moving = Math.min(1, 6.7 * Math.min(p, 1 - p));
+  const scale = 1 - 0.2 * moving;
+  // Same string as a zero brightness cell, so gaps never show at rest
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, width, height);
+  if (moving > 0) {
+    ctx.globalAlpha = moving;
+    ctx.fillStyle = css.getPropertyValue("--cell-line");
+    ctx.fillRect(0, 0, width, height);
+    ctx.globalAlpha = 1;
+  }
 
   // Snap cell edges to whole device pixels so gridlines stay crisp.
   const { cols, rows } = t.to.grid;
@@ -303,6 +326,23 @@ function draw(
     for (let i = stepX; i < cols; i += stepX) ctx.fillRect(x(i) - (w >> 1), 0, w, height);
     for (let i = stepY; i < rows; i += stepY) ctx.fillRect(0, y(i) - (w >> 1), width, w);
   };
+  // Partition lines cross-fade from the old grouping to the new; they only
+  // mean something when groups span several cells. The grid lines toggle
+  // hides them too. alpha scales both, for drawing them over the cells.
+  const groupLine = css.getPropertyValue("--group-line");
+  const partitions = (alpha: number) => {
+    if (!gridLines || alpha <= 0) return;
+    for (const [l, a] of [[t.fromLines, 1 - p], [t.to, p]] as const) {
+      if (!l.grouped || a <= 0) continue;
+      ctx.globalAlpha = a * alpha;
+      lines(l.groupCols, l.groupRows, 4, groupLine);
+    }
+    ctx.globalAlpha = 1;
+  };
+  // Under the cells, so moving cells visibly cross them. At rest the cells
+  // hide this copy and the one drawn over them below shows instead.
+  partitions(1);
+
   for (const i of order) {
     const row = t.from[2 * i] + (t.to.pos[2 * i] - t.from[2 * i]) * p;
     const col = t.from[2 * i + 1] + (t.to.pos[2 * i + 1] - t.from[2 * i + 1]) * p;
@@ -312,24 +352,23 @@ function draw(
     const toCol = t.to.pos[2 * i + 1];
     const w = x(toCol + 1) - x(toCol);
     const h = y(toRow + 1) - y(toRow);
+    // Shrunk about the cell's center, in whole pixels
+    const sw = Math.round(w * scale);
+    const sh = Math.round(h * scale);
     ctx.fillStyle = colors[i];
-    ctx.fillRect(Math.round(x(toCol) + (col - toCol) * width / cols),
-      Math.round(y(toRow) + (row - toRow) * height / rows), w, h);
+    ctx.fillRect(Math.round(x(toCol) + (col - toCol) * width / cols) + ((w - sw) >> 1),
+      Math.round(y(toRow) + (row - toRow) * height / rows) + ((h - sh) >> 1), sw, sh);
   }
 
-  // Cell lines draw over the cells, so they stay visible on moving cells too.
-  if (gridLines) lines(1, 1, 1, css.getPropertyValue("--cell-line"));
-
-  // Partition lines cross-fade; they only mean something when groups span
-  // several cells. The grid lines toggle hides them too.
-  if (!gridLines) return;
-  const groupLine = css.getPropertyValue("--group-line");
-  for (const [l, alpha] of [[t.fromLines, 1 - p], [t.to, p]] as const) {
-    if (!l.grouped || alpha <= 0) continue;
-    ctx.globalAlpha = alpha;
-    lines(l.groupCols, l.groupRows, 4, groupLine);
+  // Lines over the cells at rest, so groups read clearly. Faded out mid-move,
+  // where the gaps between shrunk cells already separate them and fixed
+  // lines would cut across the moving tiles.
+  if (gridLines && moving < 1) {
+    ctx.globalAlpha = 1 - moving;
+    lines(1, 1, 1, css.getPropertyValue("--cell-line"));
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
+  partitions(1 - moving);
 }
 
 /**

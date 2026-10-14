@@ -1,5 +1,5 @@
 import "./Keyboard.ai.css";
-import { memo, useState, type ReactNode } from "react";
+import { memo, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
   Button,
   ToggleButton,
@@ -29,7 +29,9 @@ interface Gate {
 
 /** Map with nothing selected applies to every qubit. Matches Core. */
 const QUBITS = [0, 1, 2, 3, 4, 5, 6, 7];
-const GATE_SLOTS = 10;
+/** Gate area: under Q0–Q5, left of the controls */
+const GATE_COLS = 6;
+const GATE_ROWS = 2;
 
 /** Only the gates the simulator implements; ids are its `Gates` keys.
     H, T and CNOT are a universal set. */
@@ -40,58 +42,74 @@ const SINGLE_QUBIT: Gate[] = [
   { id: "Z", label: "Z", name: "Pauli Z", selfInverse: true },
 ];
 
-const TWO_QUBIT: Gate[] = [
-  { id: "CNOT", label: "•X", name: "Controlled X", selfInverse: true },
-  { id: "CZ", label: "•Z", name: "Controlled Z", selfInverse: true },
+/** Controlled families: controls first, target(s) last, in selection
+    order. Ids follow the simulator, one C per control: CNOT, CCNOT, …;
+    CZ, CCZ, …; CT, CCT, …; SWAP, CSWAP, … (SWAP has 2 targets, so it needs
+    no control). "⇄" is a single character, keeping "•⇄" to 2. */
+const FAMILIES = [
+  { symbol: "X", name: "X", targets: 1, suffix: "NOT", selfInverse: true },
+  { symbol: "Z", name: "Z", targets: 1, suffix: "Z", selfInverse: true },
+  { symbol: "T", name: "T", targets: 1, suffix: "T", selfInverse: false },
+  { symbol: "⇄", name: "swap", targets: 2, suffix: "SWAP", selfInverse: true },
 ];
 
-// "‥" is a single character, keeping the label to 2.
-const THREE_QUBIT: Gate[] = [
-  { id: "CCZ", label: "‥Z", name: "Doubly controlled Z", selfInverse: true },
-];
+/** Well known names, added to the tooltip */
+const AKA: Record<string, string> = { CCNOT: "Toffoli", CSWAP: "Fredkin" };
 
-/** n ≥ 4: Z on the all-ones world, n - 1 controls as a superscript count
-    ("³Z"). Ids follow the simulator's CCZ, CCCZ, … naming. */
-function multiControlledZ(n: number): Gate[] {
+/** Control count as a label prefix: "•" and "‥" (single characters, keeping
+    the label to 2), then a superscript count ("³Z"). */
+function controlMark(controls: number) {
   const digits = "⁰¹²³⁴⁵⁶⁷⁸⁹";
-  const count = String(n - 1).replace(/\d/g, (d) => digits[Number(d)]);
-  return [{
-    id: `${"C".repeat(n - 1)}Z`,
-    label: `${count}Z`,
-    name: `${n - 1} controlled Z`,
-    selfInverse: true,
-  }];
+  return ["", "•", "‥"][controls]
+    ?? String(controls).replace(/\d/g, (d) => digits[Number(d)]);
+}
+
+function controlName(controls: number) {
+  return ["", "Controlled ", "Doubly controlled "][controls]
+    ?? `${controls} controlled `;
+}
+
+/** The family gates that take exactly n ≥ 2 qubits */
+function multiQubit(n: number): Gate[] {
+  return FAMILIES.filter((f) => n >= Math.max(2, f.targets)).map((f) => {
+    const controls = n - f.targets;
+    const id = "C".repeat(controls) + f.suffix;
+    const name = controls ? controlName(controls) + f.name : "Swap";
+    return {
+      id,
+      label: controlMark(controls) + f.symbol,
+      name: AKA[id] ? `${name} (${AKA[id]})` : name,
+      selfInverse: f.selfInverse,
+    };
+  });
 }
 
 /** Short text for the Last screen: key label, † when inverse, then the
-    qubits in order (controls first), e.g. "•X 1 0", "T† 3". Worst case
-    "⁷Z 0 1 2 3 4 5 6 7" fits half the keyboard on a small phone. */
+    qubits in order (controls first), e.g. "•X 10", "T† 3". Qubits are
+    single digits, so no separator; worst case "⁷Z 01234567" fits half the
+    keyboard on a small phone, spaced it wouldn't. */
 function describe({ ins, qubits }: NonNullable<KeyboardProps["lastInstruction"]>) {
-  const gate = [...SINGLE_QUBIT, ...TWO_QUBIT, ...THREE_QUBIT]
-    .find((g) => g.id === ins.gate)
-    ?? (/^C+Z$/.test(ins.gate) ? multiControlledZ(ins.gate.length)[0] : undefined);
+  const gate = [...SINGLE_QUBIT, ...multiQubit(qubits.length || QUBITS.length)]
+    .find((g) => g.id === ins.gate);
   const label = (gate?.label ?? ins.gate) + (ins.inverse ? "†" : "");
   // No selection means every qubit, as in Core
-  return `${label} ${(qubits.length ? qubits : QUBITS).join(" ")}`;
+  return `${label} ${(qubits.length ? qubits : QUBITS).join("")}`;
 }
 
 function gatesFor(qubitCount: number, map: boolean): Gate[] {
-  if (map) return SINGLE_QUBIT;
-  switch (qubitCount) {
-    case 0: return [];
-    case 1: return SINGLE_QUBIT;
-    case 2: return TWO_QUBIT;
-    case 3: return THREE_QUBIT;
-    default: return multiControlledZ(qubitCount);
-  }
+  if (map || qubitCount === 1) return SINGLE_QUBIT;
+  if (qubitCount === 0) return [];
+  return multiQubit(qubitCount);
 }
 
 /**
  * One 8 column grid of square keys, right aligned:
  *   Order screen | Last screen
  *   Q0 … Q7
- *   _ gate gate gate gate gate | INV AC
- *   _ gate gate gate gate gate | MAP DEL
+ *   gate gate gate gate gate gate | INV AC
+ *   gate gate gate gate gate gate | MAP DEL
+ * Each gate row is right aligned against the controls; empty slots fill
+ * the rest.
  * Groups use subgrid, so every key sits on the same grid.
  */
 // memo: skips the parent's re-renders while props are unchanged
@@ -107,12 +125,10 @@ export const Keyboard = memo(function Keyboard({
     dispatch({ action: "select-qubits", args: { qubits } });
   const hasQubits = selectedQubits.length > 0;
   const gates = gatesFor(selectedQubits.length, map);
-
-  // Selecting appends to the end of the order; deselecting removes in place.
-  const toggleQubit = (qubit: number, isSelected: boolean) => {
-    const rest = selectedQubits.filter((q) => q !== qubit);
-    select(isSelected ? [...rest, qubit] : rest);
-  };
+  const slots = Array.from({ length: GATE_ROWS }, (_, r) => {
+    const row = gates.slice(r * GATE_COLS, (r + 1) * GATE_COLS);
+    return [...Array<undefined>(GATE_COLS - row.length).fill(undefined), ...row];
+  }).flat();
 
   const apply = (gate: Gate) => {
     const args =
@@ -133,11 +149,12 @@ export const Keyboard = memo(function Keyboard({
   };
 
   return (
-    <div className="Keyboard">
+    <div className="Keyboard" onKeyDown={moveFocus}>
       <Screen
         className="Keyboard-screen"
         label="Order"
-        value={selectedQubits.join(" ")}
+        // Single digit qubits, unspaced so all 8 fit
+        value={selectedQubits.join("")}
         placeholder="none"
         mono
       />
@@ -158,7 +175,9 @@ export const Keyboard = memo(function Keyboard({
               tip={`Qubit ${qubit}${order !== -1 ? `, position ${order + 1}` : ""}`}
               corner={order !== -1 && order + 1}
               isSelected={order !== -1}
-              onChange={(isSelected) => toggleQubit(qubit, isSelected)}
+              // Core toggles against its own queued selection, so fast clicks
+              // don't build on a stale prop. Appends or removes in place.
+              onChange={() => dispatch({ action: "toggle-qubit", args: { qubit } })}
             >
               Q<sub>{qubit}</sub>
             </Key>
@@ -167,8 +186,7 @@ export const Keyboard = memo(function Keyboard({
       </div>
 
       <div className="Keyboard-gates" role="group" aria-label="Gates">
-        {Array.from({ length: GATE_SLOTS }, (_, i) => {
-          const gate = gates[i];
+        {slots.map((gate, i) => {
           // Empty slots keep the grid shape
           if (!gate) return <div key={`empty-${i}`} className="Keyboard-empty" />;
           const inverted = inverse && !gate.selfInverse;
@@ -201,6 +219,42 @@ export const Keyboard = memo(function Keyboard({
     </div>
   );
 });
+
+/** Arrow keys move focus between enabled keys by where they sit on screen,
+    alongside Tab. Left/Right/Home/End stay in the row; Up/Down go to the
+    nearest row with an enabled key, landing on the closest column. No
+    wrapping. Screens keep their arrows for the caret. */
+function moveFocus(e: KeyboardEvent<HTMLDivElement>) {
+  const from = e.target as HTMLElement;
+  if (!from.matches(".Keyboard-key")) return;
+  const pos = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    return { el, x: r.left + r.width / 2, y: r.top + r.height / 2, h: r.height };
+  };
+  const here = pos(from);
+  const keys = [...e.currentTarget.querySelectorAll<HTMLElement>(
+    ".Keyboard-key:not([disabled])")].map(pos);
+  // Whole rows away, so a row always beats a closer column
+  const rows = (p: typeof here) => Math.round((p.y - here.y) / here.h);
+  const row = keys.filter((p) => rows(p) === 0).sort((a, b) => a.x - b.x);
+  const i = row.findIndex((p) => p.el === from);
+  const vertical = (up: boolean) => keys
+    .filter((p) => (up ? rows(p) < 0 : rows(p) > 0))
+    .sort((a, b) => Math.abs(rows(a)) - Math.abs(rows(b))
+      || Math.abs(a.x - here.x) - Math.abs(b.x - here.x))[0];
+  const targets: Record<string, () => typeof here | undefined> = {
+    ArrowLeft: () => row[i - 1],
+    ArrowRight: () => row[i + 1],
+    Home: () => row[0],
+    End: () => row.at(-1),
+    ArrowUp: () => vertical(true),
+    ArrowDown: () => vertical(false),
+  };
+  if (!(e.key in targets)) return;
+  // Handled even at an edge, so the page doesn't scroll instead
+  e.preventDefault();
+  targets[e.key]()?.el.focus();
+}
 
 interface KeyProps {
   /** accessible name */

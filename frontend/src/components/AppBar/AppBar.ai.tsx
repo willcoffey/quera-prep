@@ -5,8 +5,10 @@ import type { CoreEvent } from "../../Core";
 import { Screen } from "../Utility/Screen.ai";
 import {
   Button,
+  Header,
   Menu,
   MenuItem,
+  MenuSection,
   MenuTrigger,
   Popover,
   ToggleButton,
@@ -31,72 +33,13 @@ const select = (qs: number[]): CoreEvent =>
   ({ action: "select-qubits", args: { qubits: qs } });
 const apply = (gate: string): CoreEvent =>
   ({ action: "apply-gate", args: { gate } });
+const invert = (gate: string): CoreEvent =>
+  ({ action: "apply-gate", args: { gate, inverse: true } });
 /** a single qubit gate on each qubit in turn, as map mode does */
 const each = (gate: string, qs: number[]) =>
   qs.flatMap((q) => [select([q]), apply(gate)]);
 const bits = (n: number, qs: number[], value: 0 | 1) =>
   qs.filter((q) => ((n >> q) & 1) === value);
-
-/** Finds the marked world among 8. Answer: world 5. */
-function grover(): CoreEvent[] {
-  const qubits = [0, 1, 2];
-  const zeros = bits(0b101, qubits, 0);
-  const flipAllOnes = [select(qubits), apply("CCZ")];
-  const oracle = [...each("X", zeros), ...flipAllOnes, ...each("X", zeros)];
-  const diffusion = [
-    ...each("Hadamard", qubits), ...each("X", qubits),
-    ...flipAllOnes,
-    ...each("X", qubits), ...each("Hadamard", qubits),
-  ];
-  // ⌊π/4 · √8⌋ = 2 rounds, ≈94.5% on the target
-  const rounds = Array.from({ length: 2 }, () => [...oracle, ...diffusion]);
-  return [...each("Hadamard", qubits), ...rounds.flat(), select([])];
-}
-
-/**
- * Recovers a hidden string s from one query of f(x) = s·x. The phase oracle
- * is Z on each qubit where s is 1. Answer: world s = 89.
- */
-function bernsteinVazirani(): CoreEvent[] {
-  const qubits = [0, 1, 2, 3, 4, 5, 6];
-  const s = 0b1011001;
-  return [
-    ...each("Hadamard", qubits),
-    ...each("Z", bits(s, qubits, 1)),
-    ...each("Hadamard", qubits),
-    select([]),
-  ];
-}
-
-/**
- * Constant or balanced in one query. Balanced oracle f(x) = x0·x1 ⊕ x2 as
- * phases: CZ on 0, 1 and Z on 2. Answer: world 0 goes dark (4 worlds with
- * qubit 2 set light up); a constant f would leave world 0 lit.
- */
-function deutschJozsa(): CoreEvent[] {
-  const qubits = [0, 1, 2];
-  return [
-    ...each("Hadamard", qubits),
-    select([0, 1]), apply("CZ"),
-    ...each("Z", [2]),
-    ...each("Hadamard", qubits),
-    select([]),
-  ];
-}
-
-/**
- * Sends 2 classical bits with 1 qubit of a shared Bell pair: Alice applies
- * Z for the high bit and X for the low bit to qubit 0; Bob decodes with
- * CNOT and H. Message 11, so qubits 0 and 1 end set. Answer: world 3.
- */
-function superdenseCoding(): CoreEvent[] {
-  return [
-    ...each("Hadamard", [0]), select([0, 1]), apply("CNOT"), // shared pair
-    ...each("X", [0]), ...each("Z", [0]),                     // encode 11
-    select([0, 1]), apply("CNOT"), ...each("Hadamard", [0]),  // decode
-    select([]),
-  ];
-}
 
 /**
  * Random circuit sampling, as in Google's supremacy experiment: brickwork
@@ -137,37 +80,168 @@ function mulberry32(seed: number) {
 }
 
 /**
- * Phase oracle interference: H on every qubit, a hypergraph phase oracle of
- * multi-controlled Zs, then H again. The oracle phases show as colour
- * mid-run; the final H layer turns them into the Walsh spectrum of the
- * Boolean function f(x) = x0..x4 ⊕ x3..x7 ⊕ x0·x7 ⊕ x1..x6.
- * Answer: worlds 0, 1, 128, 129 (~25/19/19/17%), 93 others faint, the
- * rest dark.
+ * Inverse QFT on a counting register, its bit j on qubits[j]: SWAPs reverse
+ * the bit order, then each pair undoes a π/2^d phase, CS† (CT† twice) for
+ * d = 1 and CT† for d = 2. Finer rotations (d ≥ 3) have no gate, so they're
+ * dropped; exact for Shor here, as the period divides 2^n, so the output
+ * bits controlling them are always 0.
  */
-function phaseOracle(): CoreEvent[] {
-  const qubits = [0, 1, 2, 3, 4, 5, 6, 7];
-  const terms = [[0, 1, 2, 3, 4], [3, 4, 5, 6, 7], [0, 7], [1, 2, 3, 4, 5, 6]];
-  // k qubit controlled Z is named with k - 1 Cs, e.g. CCZ for 3
-  const oracle = terms.flatMap((qs) =>
-    [select(qs), apply("C".repeat(qs.length - 1) + "Z")]);
+function inverseQft(qubits: number[]): CoreEvent[] {
+  const n = qubits.length;
+  const swaps = qubits.slice(0, n >> 1)
+    .flatMap((q, i) => [select([q, qubits[n - 1 - i]]), apply("SWAP")]);
+  const layers = qubits.flatMap((target, j) => [
+    ...qubits.slice(0, j).flatMap((control, k) => {
+      const d = j - k;
+      if (d > 2) return [];
+      return [select([control, target]), ...Array(3 - d).fill(invert("CT"))];
+    }),
+    select([target]), apply("Hadamard"),
+  ]);
+  return [...swaps, ...layers];
+}
+
+/**
+ * Shor's period finding for 15 with base 2. Work register q0–q3 (the grid
+ * column) starts at 1; counting register q4–q7 (the row) in superposition.
+ * Counting bit 0 multiplies by 2 mod 15, a left rotation of the work bits
+ * as 3 CSWAPs; bit 1 by 4, a rotation by 2; bits 2 and 3 by 16 ≡ 1, so
+ * nothing. Answer: rows 0, 4, 8, 12 by columns 1, 2, 4, 8 (the powers of 2),
+ * 1/16 each. Rows are multiples of 16/4, so the period is 4, and
+ * gcd(2² ± 1, 15) gives 3 and 5.
+ */
+function shor15(): CoreEvent[] {
+  const count = [4, 5, 6, 7];
+  const cswap = (control: number, a: number, b: number) =>
+    [select([control, a, b]), apply("CSWAP")];
   return [
-    ...each("Hadamard", qubits),
-    ...oracle,
-    ...each("Hadamard", qubits),
+    ...each("X", [0]),
+    ...each("Hadamard", count),
+    ...cswap(4, 2, 3), ...cswap(4, 1, 2), ...cswap(4, 0, 1),
+    ...cswap(5, 0, 2), ...cswap(5, 1, 3),
+    ...inverseQft(count),
+    select([]),
+  ];
+}
+
+/**
+ * Shor's period finding for 35 with base 6. Work register q0–q5 starts at 1;
+ * counting register q6–q7. 6² = 36 ≡ 1, so the work only ever holds 1 or 6,
+ * and multiplying by 6 is flipping bits 0–2 (CNOTs). Picking a base of
+ * period 2 already takes knowing the factors: a compiled demo, as published
+ * small Shor experiments are. Answer: worlds 1, 6, 129, 134, 1/4 each; with
+ * q7 set (129, 134) the period is 2, and gcd(6 ± 1, 35) gives 7 and 5.
+ */
+function shor35(): CoreEvent[] {
+  const count = [6, 7];
+  return [
+    ...each("X", [0]),
+    ...each("Hadamard", count),
+    ...[0, 1, 2].flatMap((q) => [select([6, q]), apply("CNOT")]),
+    ...inverseQft(count),
+    select([]),
+  ];
+}
+
+/** X on the last qubit where the rest are set: CNOT, CCNOT, … */
+const cx = (qs: number[]) =>
+  [select(qs), apply(`${"C".repeat(qs.length - 1)}NOT`)];
+/** Z on the worlds where every qubit is set: Z, CZ, CCZ, … */
+const cz = (qs: number[]) =>
+  [select(qs), apply(qs.length > 1 ? `${"C".repeat(qs.length - 1)}Z` : "Z")];
+
+/** Adds 1 to a register (low bit first) where every control is set: each
+    bit flips when all bits below it are 1, top bit first. */
+const increment = (reg: number[], controls: number[]) =>
+  reg.map((_, j) => reg.length - 1 - j)
+    .flatMap((j) => cx([...controls, ...reg.slice(0, j), reg[j]]));
+/** Subtracts 1: increments the complement */
+const decrement = (reg: number[], controls: number[]) =>
+  [...each("X", reg), ...increment(reg, controls), ...each("X", reg)];
+
+/**
+ * 2D quantum walk on an 8×8 torus: x on q0–q2, y on q4–q6, a 2 qubit coin
+ * on q3 and q7. Each step flips the coin (Grover diffusion) then moves one
+ * square its way, by multi-controlled increments. Starts at (4, 4). The coin
+ * bits split the grid into 4 tinted copies of the board. Answer: after 4
+ * steps a checkerboard diamond, 64 worlds; interference holds ~39% at the
+ * start, where a classical walk spreads into a smooth hump.
+ */
+function quantumWalk(): CoreEvent[] {
+  const x = [0, 1, 2];
+  const y = [4, 5, 6];
+  const coin = [3, 7];
+  const flip = [
+    ...each("Hadamard", coin), ...each("X", coin), ...cz(coin),
+    ...each("X", coin), ...each("Hadamard", coin),
+  ];
+  // moves where the coin reads c0 c1: 00 right, 10 left, 01 down, 11 up
+  const when = (c0: 0 | 1, c1: 0 | 1, moves: CoreEvent[]) => {
+    const zeros = coin.filter((_, i) => [c0, c1][i] === 0);
+    return [...each("X", zeros), ...moves, ...each("X", zeros)];
+  };
+  const step = [
+    ...flip,
+    ...when(0, 0, increment(x, coin)), ...when(1, 0, decrement(x, coin)),
+    ...when(0, 1, increment(y, coin)), ...when(1, 1, decrement(y, coin)),
+  ];
+  return [
+    ...each("X", [2, 6]),
+    // symmetric coin |−−⟩, so the walk spreads evenly
+    ...each("X", coin), ...each("Hadamard", coin),
+    ...Array.from({ length: 4 }, () => step).flat(),
+    select([]),
+  ];
+}
+
+/**
+ * Grover over all 256 worlds, 4 marked: the 2×2 block at rows 10–11,
+ * columns 6–7, so q0 and q4 are free and the oracle is one 6 qubit Z.
+ * Diffusion uses the full 8 qubit Z. ⌊π/4 · √(256/4)⌋ = 6 rounds.
+ * Answer: the 4 block worlds, ~25% each (99.6% together).
+ */
+function grover8(): CoreEvent[] {
+  const qubits = [0, 1, 2, 3, 4, 5, 6, 7];
+  const fixed = [1, 2, 3, 5, 6, 7];
+  const zeros = bits(0b10100110, fixed, 0);
+  const oracle = [...each("X", zeros), ...cz(fixed), ...each("X", zeros)];
+  const diffusion = [
+    ...each("Hadamard", qubits), ...each("X", qubits), ...cz(qubits),
+    ...each("X", qubits), ...each("Hadamard", qubits),
+  ];
+  const rounds = Array.from({ length: 6 }, () => [...oracle, ...diffusion]);
+  return [...each("Hadamard", qubits), ...rounds.flat(), select([])];
+}
+
+/**
+ * Simon's: a hidden s with f(x) = f(x ⊕ s). Input x on q4–q7 (the row),
+ * f(x) on q0–q3 (the column): copy x, then fold by s with CNOTs from one of
+ * its set bits. Answer: s = 1011, so only the 8 rows y with y·s even light
+ * up (0, 3, 4, 7, 9, 10, 13, 14), 8 columns each; a few rows solve for s.
+ */
+function simon(): CoreEvent[] {
+  const input = [4, 5, 6, 7];
+  const output = [0, 1, 2, 3];
+  const s = [0, 1, 3]; // set bits of 1011
+  return [
+    ...each("Hadamard", input),
+    ...input.flatMap((q, i) => cx([q, output[i]])),
+    ...s.flatMap((i) => cx([input[s[0]], output[i]])),
+    ...each("Hadamard", input),
     select([]),
   ];
 }
 
 const SCRIPTS: Record<string, () => CoreEvent[]> = {
-  "Phase oracle (8 qubits)": phaseOracle,
-  "Grover search (3 qubits)": grover,
-  "Bernstein–Vazirani (7 qubits)": bernsteinVazirani,
-  "Deutsch–Jozsa (3 qubits)": deutschJozsa,
-  "Superdense coding": superdenseCoding,
+  "Factor 15, Shor (8 qubits)": shor15,
+  "Factor 35, Shor (8 qubits)": shor35,
+  "Quantum walk (8 qubits)": quantumWalk,
+  "Grover, 4 of 256 (8 qubits)": grover8,
+  "Simon's (8 qubits)": simon,
   "Random circuit (8 qubits)": randomCircuit,
 };
 
-const MENU_ITEMS = [...Object.keys(SCRIPTS), "Sed do eiusmod"];
+const MENU_ITEMS = Object.keys(SCRIPTS);
 
 function Tip({ text, children }: { text: string; children: ReactNode }) {
   return (
@@ -189,14 +263,6 @@ export const AppBar = memo(function AppBar({
 }: AppBarProps) {
   return (
     <div className="AppBar">
-      <Screen
-        className="AppBar-programId"
-        aria-label="Program ID"
-        value={programId}
-        placeholder="no program"
-        mono
-      />
-
       <Tip text="Grid lines">
         <ToggleButton
           className="AppBar-button AppBar-toggle"
@@ -235,6 +301,15 @@ export const AppBar = memo(function AppBar({
         </Button>
       </Tip>
 
+      {/* Left of Menu: grid / results / run / id / menu */}
+      <Screen
+        className="AppBar-programId"
+        aria-label="Program ID"
+        value={programId}
+        placeholder="no program"
+        mono
+      />
+
       <MenuTrigger>
         <Tip text="Menu">
           <Button className="AppBar-button" aria-label="Menu">
@@ -246,15 +321,22 @@ export const AppBar = memo(function AppBar({
             className="AppBar-menu"
             onAction={(key) => {
               // Core queues events on its gate chain, which paces them and
-              // drops whatever is still queued on reset.
-              SCRIPTS[String(key)]?.().forEach(dispatch);
+              // drops whatever is still queued on reset. Scripts assume
+              // |0⟩, so AC first: clears the state and any running script.
+              const script = SCRIPTS[String(key)];
+              if (!script) return;
+              dispatch({ action: "reset", args: {} });
+              script().forEach(dispatch);
             }}
           >
-            {MENU_ITEMS.map((label) => (
-              <MenuItem key={label} id={label} className="AppBar-menuItem">
-                {label}
-              </MenuItem>
-            ))}
+            <MenuSection>
+              <Header className="AppBar-menuHeader">AI Generated</Header>
+              {MENU_ITEMS.map((label) => (
+                <MenuItem key={label} id={label} className="AppBar-menuItem">
+                  {label}
+                </MenuItem>
+              ))}
+            </MenuSection>
           </Menu>
         </Popover>
       </MenuTrigger>

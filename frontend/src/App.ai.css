@@ -27,29 +27,63 @@
   --key-black: #0e0f13; /* Keyboard INV/MAP, calc's glossy black keys */
   --key-green: #7aac3e; /* Keyboard AC/DEL, calc's AC/DEL green */
   --key-green-ink: var(--base00); /* AC/DEL legend; white is ~2.5:1 */
+  --panel-bg: #3a2a30; /* AppBar program id, calc's solar panel maroon */
+  --panel-ink: #ecdfe3; /* program id text and focus ring, 10.5:1 */
+  --panel-ink-dim: #b8a3aa; /* program id placeholder, 5.7:1 */
+  --page-bg: #252a36; /* html, around the calculator */
+  --calc-bg: #000; /* calculator body, matching the black key gaps */
+  --calc-edge: #454c5a; /* calculator body border */
 }
 
-body { margin: 0; background: #000; }
+body { margin: 0; background: var(--page-bg); }
 
-/* rows from the sketch: a row of buttons, square state, 2 rows of buttons,
-   keypad gets the rest (at least 2 rows) */
-.App {
+/* Sizes, on :root so portaled popovers and tooltips scale too. Unregistered,
+   so var() and cqi resolve where they're used: against .App inside the
+   calculator, the viewport (no container) in portals. */
+:root {
+  /* Smallest key cell: 32px, still well over the 24px WCAG 2.5.5 AA
+     floor. Keys reach 44px (AAA, Apple HIG's 44pt) on most phones, but
+     360px-wide Androids, short Safari viewports (iPhone SE) and enlarged
+     display or font size need less to fit without scrolling. The
+     calculator is then at least 8 × 32 = 256px wide by ~450px tall, so
+     the page scrolls only past ~320 × 450 (e.g. ≥ ~150% zoom on a 390px
+     phone). */
+  --button-min: 32px;
   /* Shared square button cell: an 8th of the square, so the keyboard
-     spans it and keys grow with the screen, but never below the 24px WCAG
-     AA target. Unregistered, so cqi resolves where it's used, against this
-     container. */
-  --button: max(24px, var(--square) / 8);
+     spans it and keys grow with the screen. */
+  --button: calc(var(--square) / 8);
   /* LCD screen row height: room for label + value, short of 2 rows */
   --screen: calc(var(--button) * 1.4);
-  /* Keys sit inside their cell, inset by --key-gap, like calculator keys
-     on the case; the cell still sets the target spacing. */
-  --key-gap: 3px;
-  --key-radius: 4px;
-  /* StateSpace side, the Keyboard matches it. Full width, or what fits the
-     height: square + 4 button rows + a screen row (5.4 buttons = 5.4/8
-     square) + 16px = padding (2×4) + gaps between rows (2×4). Written
-     without --button, which depends on it. */
-  --square: min(100cqi, (100dvh - 16px) / (1 + 5.4 / 8));
+  /* Spacing scales with --button, so zooming out (a bigger calculator in
+     CSS px) keeps the same proportions; values given at a 48px key. Keys
+     sit inside their cell, inset by --key-gap, like calculator keys on the
+     case; the cell still sets the target spacing. */
+  --key-gap: calc(var(--button) / 16); /* 3px */
+  --key-radius: calc(var(--button) / 12); /* 4px */
+  --gap: calc(var(--button) / 12); /* 4px, between AppBar/State/Keyboard */
+  /* Keyboard row between qubits and gates, and its separator line */
+  --section-gap: calc(var(--button) / 8); /* 6px */
+  --section-line: max(1px, var(--button) / 24); /* 2px */
+  --calc-pad: calc(var(--button) / 6); /* 8px */
+  --calc-radius: calc(var(--button) / 3.5); /* 14px */
+  /* Page margin and body border: only when floating, set below */
+  --page-pad: 0px;
+  --calc-border: 0px;
+  /* StateSpace side, the Keyboard and AppBar match it. Full width, or what
+     fits the height, less page padding and body border. In --button units
+     (1/8 square): wide = 8 + 2 pads (2/6); tall = 8 + 4 button rows + a
+     screen row (5.4) + 2 pads (2/6) + 2 gaps (2/12) + the Keyboard's
+     section gap (1/8) = 8 + 6.025 buttons. Written
+     without --button, which depends on it. Never under 8 minimum keys:
+     when zoomed past that, square and keyboard stay matched and the page
+     scrolls instead. */
+  --square: max(
+    8 * var(--button-min),
+    min(
+      (100cqi - 2 * var(--calc-border)) / (1 + 1 / 24),
+      (100svh - 2 * var(--page-pad) - 2 * var(--calc-border)) / (1 + 6.025 / 8)
+    )
+  );
   /* Raised by default, inset when pressed or toggled on. */
   --bevel-out:
     inset 1px 1px 0 rgb(255 255 255 / 0.08),
@@ -57,20 +91,65 @@ body { margin: 0; background: #000; }
   --bevel-in:
     inset 1px 1px 0 rgb(0 0 0 / 0.6),
     inset -1px -1px 0 rgb(255 255 255 / 0.05);
+}
+
+/* The page: holds the calculator body, and is the container cqi resolves
+   against. The body fills it edge to edge, unless the viewport's aspect
+   ratio is far from the calculator's (see the media query below). */
+.App {
   container-type: inline-size;
+  display: grid;
+  padding: var(--page-pad);
+  box-sizing: border-box;
+  /* Fills the viewport, grows past it when zoomed so the document scrolls
+     as one page. Likewise never narrower than the minimum calculator, so a
+     narrow viewport scrolls sideways instead. svh, not dvh: the mobile URL
+     bar hides while panning a pinch zoom, and dvh would resize the
+     calculator mid-gesture, fighting the zoom back out. */
+  min-height: 100svh;
+  min-width: calc(
+    8 * var(--button-min) * (1 + 1 / 24)
+    + 2 * (var(--page-pad) + var(--calc-border))
+  );
+}
+
+/* The calculator body: AppBar, StateSpace and Keyboard on one case. Fills
+   the page, its rows centered. Rows from the sketch: a row of buttons,
+   square state, keypad. */
+.calc-body {
   display: grid;
   grid-template:
     "appbar" auto
     "state" auto
-    "keyboard" 1fr
-    / 1fr;
-  gap: 4px;
-  padding: 4px;
-  box-sizing: border-box;
-  height: 100dvh;
+    "keyboard" auto
+    / var(--square);
+  place-content: center;
+  gap: var(--gap);
+  padding: var(--calc-pad);
+  background: var(--calc-bg);
 }
 
-.App > * {
+/* Viewport far from the calculator's ~3:5: the body floats on the page as
+   a bordered case, centered, rather than leaving bare bands at its sides
+   or ends. Phones (~9:19.5) still fill edge to edge. */
+@media (min-aspect-ratio: 4/5), (max-aspect-ratio: 2/5) {
+  /* on :root, where --square reads them */
+  :root {
+    --page-pad: 8px;
+    --calc-border: 1px;
+  }
+
+  .App { place-content: center; }
+
+  .calc-body {
+    border: var(--calc-border) solid var(--calc-edge);
+    border-radius: var(--calc-radius);
+    /* faint top highlight, like light catching the case edge */
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  }
+}
+
+.calc-body > * {
   background: #888;
   display: grid;
   place-content: center;

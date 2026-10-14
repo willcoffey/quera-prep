@@ -50,6 +50,22 @@ private val GATE_QUBITS = mapOf(
     "CCCCCZ" to 6,
     "CCCCCCZ" to 7,
     "CCCCCCCZ" to 8,
+    "SWAP" to 2,
+    "CSWAP" to 3,
+    "CCNOT" to 3,
+    "CCCNOT" to 4,
+    "CCCCNOT" to 5,
+    "CCCCCNOT" to 6,
+    "CCCCCCNOT" to 7,
+    "CCCCCCCNOT" to 8,
+    "CT" to 2,
+    "CCT" to 3,
+    "CCCT" to 4,
+    "CCCCT" to 5,
+    "CCCCCT" to 6,
+    "CCCCCCT" to 7,
+    "CCCCCCCT" to 8,
+
 )
 
 

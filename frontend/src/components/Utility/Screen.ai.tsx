@@ -36,7 +36,7 @@ const CSS = `
 
 .Screen-label {
   padding: 0 8px;
-  font-size: 0.625em;
+  font-size: 0.64em;
   line-height: 1;
   color: var(--lcd-ink-dim);
   text-transform: uppercase;

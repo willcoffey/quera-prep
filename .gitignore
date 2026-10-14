@@ -5,4 +5,5 @@ build/
 .dev/
 .env
 frontend/sketch/
+frontend/dist/
 frontend/node_modules/

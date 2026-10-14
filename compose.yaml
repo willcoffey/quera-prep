@@ -3,6 +3,13 @@ volumes:
   pulsardata: {}
 services:
   #-------------------- Infrastructure Services --------------------     
+  # Cloudflare tunnel, outbound only. Routes are set in the Cloudflare dashboard
+  cloudflared:
+    image: docker.io/cloudflare/cloudflared:2026.9.1
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    restart: unless-stopped
   # Gateway, only exposed service. Routes requests to services. Kong=nginx+openresty
   kong:                                      
     image: docker.io/library/kong:3.9
@@ -11,10 +18,21 @@ services:
       KONG_DECLARATIVE_CONFIG: /kong/kong.yml  
       KONG_NGINX_WORKER_PROCESSES: "1"
       KONG_NGINX_PROXY_CLIENT_MAX_BODY_SIZE: "128k"
+      # Match to cloudflare tunnel
+      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:3000"
     volumes:                                 
       - ./kong/kong.yml:/kong/kong.yml:ro    
     ports:                                   
       - "8000:8000"                          
+    networks:
+      default:
+        aliases: [nginx]
+  # Frontend, static build of react app mounted in nginx container
+  frontend:
+    image: docker.io/library/nginx:1.28-alpine
+    volumes:
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    restart: on-failure
   # Database
   postgres:
     image: docker.io/library/postgres:18

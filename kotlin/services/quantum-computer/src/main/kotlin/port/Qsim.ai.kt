@@ -482,6 +482,113 @@ val Gates: Map<String, Gate> = mapOf(
         reverse = controlledZ(8),
         generator = controlledZGenerator(8),
     ),
+    /**
+     * Exchanges the two qubits. Its own reverse.
+     */
+    "SWAP" to Gate(
+        forward = arrayOf(
+            doubleArrayOf(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+        ),
+        reverse = arrayOf(
+            doubleArrayOf(1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
+        ),
+        // (π/2)(I - SWAP), since SWAP is its own reverse
+        generator = arrayOf(
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, PI / 2, 0.0, -PI / 2, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, -PI / 2, 0.0, PI / 2, 0.0, 0.0, 0.0),
+            doubleArrayOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        ),
+    ),
+    /**
+     * Swaps the last two qubits in the worlds where the first is set, i.e.
+     * applyGate([control, a, b], Gates.CSWAP.forward). Its own reverse.
+     */
+    "CSWAP" to Gate(
+        forward = controlledSwap(3),
+        reverse = controlledSwap(3),
+        generator = controlledSwapGenerator(3),
+    ),
+    /**
+     * Flips the last qubit in the worlds where every other qubit is set, for 3
+     * to 8 qubits, i.e. CCNOT is Toffoli. Controls first, target last, as CNOT.
+     * Each is its own reverse.
+     */
+    "CCNOT" to Gate(
+        forward = controlledX(3),
+        reverse = controlledX(3),
+        generator = controlledXGenerator(3),
+    ),
+    "CCCNOT" to Gate(
+        forward = controlledX(4),
+        reverse = controlledX(4),
+        generator = controlledXGenerator(4),
+    ),
+    "CCCCNOT" to Gate(
+        forward = controlledX(5),
+        reverse = controlledX(5),
+        generator = controlledXGenerator(5),
+    ),
+    "CCCCCNOT" to Gate(
+        forward = controlledX(6),
+        reverse = controlledX(6),
+        generator = controlledXGenerator(6),
+    ),
+    "CCCCCCNOT" to Gate(
+        forward = controlledX(7),
+        reverse = controlledX(7),
+        generator = controlledXGenerator(7),
+    ),
+    "CCCCCCCNOT" to Gate(
+        forward = controlledX(8),
+        reverse = controlledX(8),
+        generator = controlledXGenerator(8),
+    ),
+    /**
+     * T on the worlds where every qubit is set, for 2 to 8 qubits. Symmetric
+     * like CZ, so all qubits act as controls.
+     */
+    "CT" to Gate(
+        forward = controlledT(2, 1),
+        reverse = controlledT(2, -1),
+        generator = controlledTGenerator(2),
+    ),
+    "CCT" to Gate(
+        forward = controlledT(3, 1),
+        reverse = controlledT(3, -1),
+        generator = controlledTGenerator(3),
+    ),
+    "CCCT" to Gate(
+        forward = controlledT(4, 1),
+        reverse = controlledT(4, -1),
+        generator = controlledTGenerator(4),
+    ),
+    "CCCCT" to Gate(
+        forward = controlledT(5, 1),
+        reverse = controlledT(5, -1),
+        generator = controlledTGenerator(5),
+    ),
+    "CCCCCT" to Gate(
+        forward = controlledT(6, 1),
+        reverse = controlledT(6, -1),
+        generator = controlledTGenerator(6),
+    ),
+    "CCCCCCT" to Gate(
+        forward = controlledT(7, 1),
+        reverse = controlledT(7, -1),
+        generator = controlledTGenerator(7),
+    ),
+    "CCCCCCCT" to Gate(
+        forward = controlledT(8, 1),
+        reverse = controlledT(8, -1),
+        generator = controlledTGenerator(8),
+    ),
 )
 
 /**
@@ -505,6 +612,90 @@ fun controlledZGenerator(n: Int): ComplexMatrix {
     return Array(size) { row ->
         val r = InterleavedComplexVector(2 * size)
         if (row == size - 1) r[2 * row] = PI
+        r
+    }
+}
+
+/**
+ * Identity on n qubits, except the last two worlds trade amplitudes: the last
+ * qubit flips where every other qubit is set.
+ */
+fun controlledX(n: Int): ComplexMatrix {
+    val size = 1 shl n
+    return Array(size) { row ->
+        val r = InterleavedComplexVector(2 * size)
+        r[2 * (if (row < size - 2) row else row xor 1)] = 1.0
+        r
+    }
+}
+
+/**
+ * (π/2)(I - X) on the last two worlds and zero elsewhere, as CNOT's, so
+ * exp(-i·H) flips the target only where every control is set.
+ */
+fun controlledXGenerator(n: Int): ComplexMatrix {
+    val size = 1 shl n
+    return Array(size) { row ->
+        val r = InterleavedComplexVector(2 * size)
+        if (row >= size - 2) {
+            r[2 * row] = PI / 2
+            r[2 * (row xor 1)] = -PI / 2
+        }
+        r
+    }
+}
+
+/**
+ * Identity on n qubits, except worlds ..101 and ..110 trade amplitudes: the
+ * last two qubits swap where every other qubit is set.
+ */
+fun controlledSwap(n: Int): ComplexMatrix {
+    val size = 1 shl n
+    return Array(size) { row ->
+        val r = InterleavedComplexVector(2 * size)
+        val swapped = row == size - 3 || row == size - 2
+        r[2 * (if (swapped) row xor 3 else row)] = 1.0
+        r
+    }
+}
+
+/** (π/2)(I - SWAP) on worlds ..101 and ..110, zero elsewhere */
+fun controlledSwapGenerator(n: Int): ComplexMatrix {
+    val size = 1 shl n
+    return Array(size) { row ->
+        val r = InterleavedComplexVector(2 * size)
+        if (row == size - 3 || row == size - 2) {
+            r[2 * row] = PI / 2
+            r[2 * (row xor 3)] = -PI / 2
+        }
+        r
+    }
+}
+
+/**
+ * Identity on n qubits, except the all-ones world turns by e^(iπ/4) as T,
+ * or back by e^(-iπ/4) with sign -1 for the reverse.
+ */
+fun controlledT(n: Int, sign: Int): ComplexMatrix {
+    val size = 1 shl n
+    return Array(size) { row ->
+        val r = InterleavedComplexVector(2 * size)
+        if (row == size - 1) {
+            r[2 * row] = SQRT1_2
+            r[2 * row + 1] = sign * SQRT1_2
+        } else {
+            r[2 * row] = 1.0
+        }
+        r
+    }
+}
+
+/** Zero everywhere except -π/4 on the all-ones world, as T's */
+fun controlledTGenerator(n: Int): ComplexMatrix {
+    val size = 1 shl n
+    return Array(size) { row ->
+        val r = InterleavedComplexVector(2 * size)
+        if (row == size - 1) r[2 * row] = -PI / 4
         r
     }
 }

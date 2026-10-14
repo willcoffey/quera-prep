@@ -1,4 +1,4 @@
-/* `.App > *` in App.ai.css sets placeholder styles; the doubled class
+/* `.calc-body > *` in App.ai.css sets placeholder styles; the doubled class
    outranks it regardless of stylesheet order. Size comes from App.ai.css. */
 .StateSpace.StateSpace {
   /* read by the canvas renderer */
