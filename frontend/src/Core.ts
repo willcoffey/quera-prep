@@ -1,7 +1,8 @@
 /**
  * @ TODO Contains many hardcodes specific to 8 qubits.
  */
-import { Gates, isGate, QuantumComputer } from "../../../quantum-computer/qc";
+//import { Gates, isGate, QuantumComputer } from "../../../quantum-computer/qc";
+import { Gates, isGate, QuantumComputer } from "./qc";
 
 const GATE_ANIMATION_STEPS = 25;
 const GATE_ANIMATION_TIME = 10;
