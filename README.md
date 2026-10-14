@@ -1,54 +1,62 @@
 # Summary
-This project is a learning artifact of familiarizing myself with the Quera stack 
-and playing around with a few ideas I've had.
-
-It's an implementation of a basic docker setup with:
- - A kong container for routing
- - A postgres container for persistance
- - A pulsar message broker
- - Two kotlin services, one being a "quantum computer" and the other being
-a job orchestrator
- - A frontend with a visualizer. The inpsiration of the visualizer being block 
-cellular automata. The unitary gate matricies are the update function, the 
-blocks are non-local partitions of config space determined by selected qubits.
- - A cloudflared tunnel for external access to the sandboxed vm
-
+A mock backend of a spring boot/pulsar/postgres stack running a toy quantum
+computer simulator. Additionally, a react frontend showing quantum computation
+as block operations on a grid. Akin to block cellular automata with non-local
+neighborhood. Cells move on qubit selection to keep neighborhood spatially 
+together.
 
 # Current Status
-The design is pretty much settled, but it is still very much a work in progress.
+MVP functional, architecture settled. Bugfixes, filling out, review, testing
+still remain.
 
+# Setup
+For cloudflare tunneling, a token must be provided in `.env`. Any password can
+be provided for postgres fields.
+```
+PG_PASSWORD=...
+TASK_MANAGER_DB_PASSWORD=...
+TUNNEL_TOKEN="..."
+```
+
+# Quick Start
+##  Backend
+```sh
+./dev.ai.sh --rebuild
+
+# Start dev mode on task manager service, allow AI access to pulsar.
+./dev.ai.sh task-manager --ai-access
+
+# Build the frontend to be served by nginx container
+cd frontend
+npm run build
+```
+
+## Frontend
+From `./frontend/`
+```sh
+# Start vite dev server
+npm run dev
+```
 ---
+# Tasks
+ - Rate limiting. Caps.
+ - Results polling
+ - qc error handling
 
+## Tests
+ - End to end rendered canvas vs qc.ts
+ - Fuzzing api
 
-## Need to do
- - Sane results polling
- - Thread safety fix in backend
- - End to end testing of rendered canvas. E.g. parse the rendered final result,
-verify against qc.
- - Styling and testing interface
- - max number of runs in backend, rate limiting, max request rate in frontend
- - Handling internal qc errors
+# Issues
+ - Thread safety for program cache
+ - Dead letter Q
 
-## Want to do
+# Wants
+ - Linter & Style
  - Review AI generated algos
  - Principled rule for ordering bitstring partitions
 
-## Wish I could
- - Handling run errors via pulsar
- - Dead letter q
- - Linter & Style
+# Notes
+Architecture assumes individual runs are expensive enough that the 
+message overhead is trivial.
 
-# The Stack
-
-## Out of scope
-WAF, Auth, Tenancy
-
-## Used
-Kong 
-Kotlin / Spring Boot
-Pulsar
-Docker via Podman
-Typescript + React
-
-# Development
-@ TODO

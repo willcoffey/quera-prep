@@ -1,27 +1,30 @@
-# Sumamry
+# Summary
+A quantum computing visualization. Treat qubits as neighborhood selection. Gate
+is update rule. It's a block cellular automaton with non-local neighborhood.
 
-A basic setup for Typescript and react. To run the dev server:
+Host dev server on port 3000
 `npm run dev`
-to build static assets
+
+Build static assets, served via nginx container
 `npm run build`
 
-Assets are served by an nginx docker container during prod.
+# Issues
+ - Map button bypasses the promise chain, add map command. possibly combine gate
+matrices into larger matrix.
+ - Replay & user input both have delay. Delay should be removed for user input.
 
----
-
-# Future issues
-I'm omitting a lot of features to get this in a usable state, but they should be
-addressed some ways.
-
-No rate-limiting on job requests. And since they are triggered by the `run-job`
-event they could hypothetically end up in future replays. So executed even 
-faster than a user can click.
-
-Generic dump of `response.text()` on fetch errors, instead of using Spring 
-error message standards.
+# Features
+ - qasm strings
+ - past qasm programs
+ - sqrt key
+ - more gates
 
 
 # Playwright Setup
+Verify playwright setup. Claude has a tendency to have issues in the sandbox, 
+and then run the chrome binary manually so it can get a screenshot. Can appear
+to be functional but not be.
+
 ```sh
 mkdir -p ~/playwright-out
 claude mcp add \
