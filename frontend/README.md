@@ -1,3 +1,14 @@
+# Sumamry
+
+A basic setup for Typescript and react. To run the dev server:
+`npm run dev`
+to build static assets
+`npm run build`
+
+Assets are served by an nginx docker container during prod.
+
+---
+
 # Future issues
 I'm omitting a lot of features to get this in a usable state, but they should be
 addressed some ways.
