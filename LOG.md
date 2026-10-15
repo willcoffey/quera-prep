@@ -2,6 +2,13 @@
 Got MVP done, can get interface styled.
 
 ---
+# Thu Oct 15 03:19:53 PM EDT 2026
+Worked through thread safety issue on cache. It's pretty verbose and could be
+refactored to be more readable/fewer lines. Really, it could be refactored with
+`LinkedHashMap` which is essentially what I built, but I wanted to work through
+the problem myself.
+
+/bin/bash: line 1: log: command not found
 # Mon Oct 12 09:44:54 PM EDT 2026
 Refactoring the backend into a message per run system to simplify things. 
 

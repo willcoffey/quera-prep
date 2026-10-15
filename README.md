@@ -48,7 +48,7 @@ npm run dev
  - Fuzzing api
 
 # Issues
- - Thread safety for program cache
+ - ~~Thread safety for program cache~~
  - Dead letter Q
 
 # Wants

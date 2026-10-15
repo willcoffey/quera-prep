@@ -1,5 +1,6 @@
 package quantumcomputer
 
+
 // Universal spring imports
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
@@ -22,6 +23,7 @@ import jakarta.validation.constraints.Pattern
 // For REST requests to pull programs from task-manager
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.body
+import org.springframework.web.client.RestClientException
 
 import org.apache.pulsar.client.api.SubscriptionType
 import org.springframework.pulsar.listener.AckMode
@@ -31,6 +33,8 @@ import org.springframework.pulsar.listener.AckMode
  */
 import quantumcomputer.port.QSim
 
+
+const val CACHE_PROGRAM_COUNT = 100 // Must be at least 2
 
 data class APIResponse<T>(val msg: String, val data: T)
 data class Program(val programId: String, val commands: List<String>)
@@ -84,7 +88,7 @@ class QuantumComputer(
      * Cache of recently run programs, avoids excessive task-manager requests
      * eventually could be replaced with local database lookup.
      */
-    private val programs = LinkedHashMap<String, List<Command>>()
+    private val programCache = ProgramCache()
 
     /**
      * Subscribe to task events
@@ -98,38 +102,119 @@ class QuantumComputer(
         properties = ["receiverQueueSize=50"],
     )
     fun run(raw: ByteArray) {
-        try {
-            // Input Validation
-            val msg = parseRun(raw)
+        // Input Validation
+        val msg = parseRun(raw)
 
-            // Create a new QC instance
-            val qc = QSim(QUBITS)
+        // Create a new QC instance
+        val qc = QSim(QUBITS)
 
-            // Load the program from cache, or fetch it from task-manager
-            val commands = programs.getOrPut(msg.programId) { loadProgramInstructions(msg.programId) }
-            if (programs.size > 100) programs.remove(programs.keys.first())
+        // Load the program from cache, or fetch it from task-manager
+        val commands = loadProgramInstructions(msg.programId)
 
+        // Null commands means an invalid program, but it was still fetched
+        if (commands != null) {
             // Execute the program on the sim
             for (command in commands)
                 qc.apply(command)
 
             // Format the result 
             val result = ResultMsg(msg.programId, msg.taskId, msg.runId, qc.measure())
-
             pulsar.send("results", json.writeValueAsString(result))
-        } catch (e: Exception) {
-            println("Run failed ${e.message}")
+        } else {
+            println("Program ${msg.programId} is invalid")
+            // @TODO - Send an error message or something
         }
     }
 
-    fun loadProgramInstructions(programId: String): List<Command> {
-        val res = RestClient.create().get()
-            .uri("http://task-manager:8080/programs/{id}", programId)
-            .retrieve()
-            .body<APIResponse<Program>>()
-        if (res == null)
-            throw IllegalStateException("Empty response for program $programId")
-        return parseCommands(res.data.commands)
+    /**
+     * Load the program from cache, or fetch it externally into cache
+     */
+    fun loadProgramInstructions(programId: String): List<Command>? {
+        var cache: CacheNode? = null
+        /**
+         * Lock the thread and lookup the cache value. Updates the linked list
+         * so it matches access time
+         */
+        synchronized(programCache) {
+            cache = programCache.cache.get(programId)
+            when {
+                // Cache miss, do nothing, will be fetched outside lock
+                cache == null -> {}
+                // Expired cached network error, delete and treat as miss.
+                cache.expiresAt != null && cache.expiresAt < System.nanoTime() -> {
+                    if (cache.prev == null) programCache.tail = cache.nextOrFail()
+                    else cache.prevOrFail().next = cache.next
+
+                    if (cache.next == null) programCache.head = cache.prevOrFail()
+                    else cache.nextOrFail().prev = cache.prev
+                    programCache.cache.remove(programId)
+                    cache = null
+                }
+                // Cache is head, do nothing
+                cache.next == null -> {}
+                // Cache is tail, move to head
+                cache.prev == null -> {
+                    cache.nextOrFail().prev = null
+                    programCache.tail = cache.nextOrFail()
+                    cache.next = null
+                    cache.prev = programCache.head
+                    programCache.head.next = cache
+                    programCache.head = cache
+                }
+                // Cache is somehwere in the middle, update position
+                else -> {
+                    cache.nextOrFail().prev = cache.prev
+                    cache.prevOrFail().next = cache.next
+                    cache.next = null
+                    cache.prev = programCache.head
+                    programCache.head.next = cache
+                    programCache.head = cache
+                }
+            }
+            if (cache != null) return cachedCommands(cache)
+        }
+
+        // Perform a fetch for the program
+        val res = try {
+            RestClient.create().get()
+                .uri("http://task-manager:8080/programs/{id}", programId)
+                .retrieve()
+                .body<APIResponse<Program>>()
+        } catch (e: RestClientException) {
+            null
+        }
+        // Parse the commands for validity outside the lock. null == invalid commands.
+        val commands = res?.let { runCatching { parseCommands(it.data.commands) }.getOrNull() }
+
+
+        // Insert the program into cache, and remove any old values
+        synchronized(programCache) {
+            // In case another thread inserted this while we were fetching, if 
+            // so, it would have already been added. This access not recored.
+            val doubleCheck = programCache.cache.get(programId)
+            if (doubleCheck != null) return cachedCommands(doubleCheck)
+            if (res == null) {
+                // If there was a network error, cache the error with a short TTL
+                // so future messages don't spam
+                cache = CacheNode(programId, null, System.nanoTime() + 60_000_000_000L)
+            } else {
+                cache = CacheNode(programId, commands)
+            }
+
+            cache.prev = programCache.head
+            programCache.head.next = cache
+            programCache.head = cache
+            programCache.cache.put(programId, cache)
+
+            while (programCache.cache.size > CACHE_PROGRAM_COUNT) {
+                val tail = programCache.tail
+                tail.nextOrFail().prev = null
+                programCache.cache.remove(tail.id)
+                programCache.tail = tail.nextOrFail()
+            }
+
+            return cachedCommands(cache)
+        }
     }
 
     /**
@@ -210,3 +295,41 @@ data class ResultMsg(
     val runId: UUID,
     val result: Int,
 )
+
+
+class ProgramCache(
+    val cache: HashMap<String, CacheNode> = HashMap(),
+    var head: CacheNode = CacheNode("head", emptyList()),
+    var tail: CacheNode = CacheNode("tail", emptyList()),
+) {
+    init {
+        head.prev = tail
+        tail.next = head
+    }
+}
+
+class CacheNode(
+    val id: String,
+    val commands: List<Command>? = null,
+    // For caching network errors so we don't spam fetches on 404 etc.
+    val expiresAt: Long? = null
+) {
+    var next: CacheNode? = null
+    var prev: CacheNode? = null
+
+    // Helper functions to avoid the need for !!
+    fun nextOrFail() = next ?: error("Cache list broken: $id has no next")
+    fun prevOrFail() = prev ?: error("Cache list broken: $id has no prev")
+}
+
+/**
+ * Returns a list of valid commands or null if the node has a cached program.
+ * If the node represents an error unrelated to commands, such as network, it
+ * throws
+ */
+private fun cachedCommands(node: CacheNode): List<Command>? {
+    if (node.expiresAt != null)
+        throw IllegalStateException("Cached network error for ${node.id}, try later")
+    return node.commands
+}
+
