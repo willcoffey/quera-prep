@@ -140,13 +140,10 @@ class QuantumComputer(
             when {
                 // Cache miss, do nothing, will be fetched outside lock
                 cache == null -> {}
-                // Expired cached network error, delete and treat as miss.
+                // Expired cached network error, delete and treat as miss. It
+                // gets left in the linked list, but will harmlessly migrate
+                // out as more items are added
                 cache.expiresAt != null && cache.expiresAt < System.nanoTime() -> {
-                    if (cache.prev == null) programCache.tail = cache.nextOrFail()
-                    else cache.prevOrFail().next = cache.next
-
-                    if (cache.next == null) programCache.head = cache.prevOrFail()
-                    else cache.nextOrFail().prev = cache.prev
                     programCache.cache.remove(programId)
                     cache = null
                 }
@@ -209,7 +206,10 @@ class QuantumComputer(
             while (programCache.cache.size > CACHE_PROGRAM_COUNT) {
                 val tail = programCache.tail
                 tail.nextOrFail().prev = null
-                programCache.cache.remove(tail.id)
+
+                // The check prevents a network error node that is still in the list from triggering
+                // the removal of a fresher fetch
+                if (programCache.cache[tail.id] === tail) programCache.cache.remove(tail.id)
                 programCache.tail = tail.nextOrFail()
             }
 

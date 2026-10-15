@@ -8,7 +8,9 @@ refactored to be more readable/fewer lines. Really, it could be refactored with
 `LinkedHashMap` which is essentially what I built, but I wanted to work through
 the problem myself.
 
-/bin/bash: line 1: log: command not found
+Prevented the program id from being removed when network error gets dropped off
+the tail. otherwise it would also delete any new id from the hash map.
+
 # Mon Oct 12 09:44:54 PM EDT 2026
 Refactoring the backend into a message per run system to simplify things. 
 
