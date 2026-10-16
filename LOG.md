@@ -2,7 +2,18 @@
 Got MVP done, can get interface styled.
 
 ---
+# Fri Oct 16 10:14:38 AM EDT 2026
+Quick fix for memory leak on cache system. Whole thing needs to be cleaned up
+as it's pretty ugly, but going to wait till the end when I start looking up
+standard practice for style & file structure.
+
+
 # Thu Oct 15 03:19:53 PM EDT 2026
+Added a dead letter queue. Malformed task messages still get retried when they
+should just be rejected initially, but at least they get handled for now.
+
+---
+
 Worked through thread safety issue on cache. It's pretty verbose and could be
 refactored to be more readable/fewer lines. Really, it could be refactored with
 `LinkedHashMap` which is essentially what I built, but I wanted to work through

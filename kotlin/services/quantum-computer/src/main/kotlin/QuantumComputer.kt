@@ -11,6 +11,9 @@ import tools.jackson.databind.ObjectMapper
 // Pulsar
 import org.springframework.pulsar.annotation.PulsarListener
 import org.springframework.pulsar.core.PulsarTemplate
+import org.apache.pulsar.client.api.DeadLetterPolicy
+import org.springframework.context.annotation.Bean
+
 
 import tools.jackson.core.JacksonException
 import jakarta.validation.Validator
@@ -91,6 +94,21 @@ class QuantumComputer(
     private val programCache = ProgramCache()
 
     /**
+     * Dead letter q for unhandled errors processing messages that should be
+     * retried. i.e. network, qc
+     *
+     * Like typescript static, a property of the class not an instance of it.
+     */
+    companion object {
+        @Bean
+        @JvmStatic
+        fun runsDlq(): DeadLetterPolicy = DeadLetterPolicy.builder()
+            .maxRedeliverCount(5)
+            .build()
+    }
+
+
+    /**
      * Subscribe to task events
      *
      */
@@ -99,7 +117,11 @@ class QuantumComputer(
         subscriptionName = "quantum-computer",
         subscriptionType = [SubscriptionType.Shared],
         ackMode = AckMode.RECORD,
-        properties = ["receiverQueueSize=50"],
+        properties = [
+            "receiverQueueSize=50",
+            "negativeAckRedeliveryDelayMicros=5000000",
+        ],
+        deadLetterPolicy = "runsDlq",
     )
     fun run(raw: ByteArray) {
         // Input Validation
@@ -202,10 +224,12 @@ class QuantumComputer(
             programCache.head.next = cache
             programCache.head = cache
             programCache.cache.put(programId, cache)
+            programCache.size++
 
-            while (programCache.cache.size > CACHE_PROGRAM_COUNT) {
+            while (programCache.size > CACHE_PROGRAM_COUNT) {
                 val tail = programCache.tail
                 tail.nextOrFail().prev = null
+                programCache.size--
 
                 // The check prevents a network error node that is still in the list from triggering
                 // the removal of a fresher fetch
@@ -299,6 +323,9 @@ data class ResultMsg(
 
 class ProgramCache(
     val cache: HashMap<String, CacheNode> = HashMap(),
+    // Size of the linked list, needed because some hash map removals do not
+    // remove items from the list, so they build up
+    var size: Int = 0,
     var head: CacheNode = CacheNode("head", emptyList()),
     var tail: CacheNode = CacheNode("tail", emptyList()),
 ) {
