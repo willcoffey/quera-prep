@@ -49,12 +49,17 @@ npm run dev
 
 # Issues
  - ~~Thread safety for program cache~~
- - Dead letter Q
+ - ~~Dead letter Q~~
 
 # Wants
  - Linter & Style
  - Review AI generated algos
  - Principled rule for ordering bitstring partitions
+ - Core.ts has a renderer that generates img data that could be used for CLI
+image generation. Component only displays.
+ - CLI for generating webp
+ - Build gates that look like rotations in 2d for the partitions.
+ - qasm format for strings, ability to load programs into interface
 
 # Notes
 Architecture assumes individual runs are expensive enough that the 

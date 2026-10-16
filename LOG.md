@@ -1,7 +1,38 @@
 # Current Summary
-Got MVP done, can get interface styled.
+Waiting on getting a deadline to properly prioritize, but overdue to setup an
+outline for a final product.
+
+## Timeline
+ - Saturday - half day, feature complete
+ - Sunday - testing
+ - Monday - code review, tidying and organization
+ - Tuesday - half day, documentation, unknowns  
+
+## Readme
+Final rewrite of readme. Last thing to do.
+
+## Testing
+End to end test of rendered canvas. take the generated final image, turn it back
+into complex values, compare against same program on qc.ts
+
+Stress testing, fuzzing, tc netem
+
+Frontend, a11y
+
+## Review, Refactor, Styling
+I need to figure out what idiomatic kotlin looks like. file structure etc. as
+part of code review, I'll compare to existing codebases.
+
+https://github.com/tolgee/tolgee-platform
+https://github.com/gotson/komga
+https://github.com/Netflix/dgs-framework
 
 ---
+
+# Fri Oct 16 04:17:53 PM EDT 2026
+Testing if denying "EnterWorkTree" was any reparations on use.
+
+
 # Fri Oct 16 10:38:30 AM EDT 2026
 Pushing change to claude settings for a very annoying harness behaviour. Despite
 the sandbox settings, the harness creates a `.claude` setting whenever it goes

@@ -3,12 +3,14 @@
  */
 //import { Gates, isGate, QuantumComputer } from "../../../quantum-computer/qc";
 import { Gates, isGate, QuantumComputer } from "./qc";
+import { Client } from "./Client";
 
 const GATE_ANIMATION_STEPS = 25;
 const GATE_ANIMATION_TIME = 10;
 export const SELECT_ANIMATION_TIME = 550;
 
 export class Core {
+  client: Client;
   state: CoreState;
   // Chain of gate execution that each take some time. for guaranteed gate order
   // on async function.
@@ -20,6 +22,17 @@ export class Core {
     chain: Promise.resolve(),
   };
   constructor() {
+    /** Create a client that is connected to the current state */
+    this.client = new Client(
+      (data) => {
+        if (data.programId == this.state.programId) {
+          this.state.results = data.results;
+          this.onChange();
+        }
+      },
+      () => this.state.programId,
+    );
+
     this.state = {
       qc: new QuantumComputer(8),
       programId: "",
@@ -27,16 +40,6 @@ export class Core {
       selectedQubits: [],
       status: "COMPLETE",
     };
-  }
-
-  /**
-   * Polls and updates results until the app is no longer "active" which is when
-   * a certain number of requests have been made since a user event. short
-   * delay when # of runs changed, longer delay when no change
-   *
-   * This isn't good long term, just quick a dirty for MVP
-   */
-  pollResults() {
   }
 
   // Single command bus for processing all external events
@@ -55,7 +58,6 @@ export class Core {
         });
         this.addToChain(() => sleep(SELECT_ANIMATION_TIME));
         break;
-
       case "apply-gate":
         this.state.status = "PROCESSING";
         // Program update also has to be on the chain since it depends on
@@ -90,18 +92,16 @@ export class Core {
       case "run-job":
         // Submits the task to the backend with 1000 requested runs
         this.addToChain(() => {
-          Core.submitTask(
+          this.client.submitTask(
             this.state.programId,
             this.state.program.slice(),
           ).catch(console.error);
         });
         break;
       case "fetch-results":
-        // Read results for the current programId when this event
-        // is processed
-        this.addToChain(() => {
-          return Core.fetchResults(this.state).catch(console.error);
-        });
+        // Immediately starts fetching results for whatever the current
+        // programId is. Order not guaranteed.
+        this.client.poll();
         break;
       case "reset":
         this.eventChain.canceled = true;
@@ -127,29 +127,6 @@ export class Core {
   }
 
   /**
-   * Basic task submission to backend.
-   * No rate limiting, no retry. Simply throws on error.
-   */
-  static async submitTask(programId: string, program: string[]) {
-    if (!program.length) throw new Error("Empty program, not submitting task");
-    const idemKey = crypto.getRandomValues(new Uint8Array(32)).toHex();
-    const res = await fetch("/tasks/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        {
-          idemKey,
-          programId,
-          commands: program,
-          runs: 1000,
-        } satisfies CreateTaskBody,
-      ),
-    });
-    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-    return (await res.json()).data.taskId as number;
-  }
-
-  /**
    * Add a function to the event chain. Useful for running async methods that
    * need to resolve in order. E.g. sleeping between frames
    */
@@ -161,16 +138,6 @@ export class Core {
       await fn();
       this.onChange();
     });
-  }
-
-  static async fetchResults(state: CoreState) {
-    const { programId } = state;
-    const res = await fetch(`/tasks/results/${programId}`);
-    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-    const results: number[] = (await res.json()).data.results;
-    // Ignore if the program changed while waiting
-    if (programId !== state.programId) return;
-    state.results = results;
   }
 
   /**
@@ -244,19 +211,4 @@ export type CoreEvent =
 interface GateInstruction {
   gate: string;
   inverse?: boolean;
-}
-
-/**
- * Request body for POST /tasks/
- * mirrors CreateTaskBody in TaskManager.kt
- */
-interface CreateTaskBody {
-  /** /[A-Z0-9]{64}/i */
-  idemKey: string;
-  /** SHA256 of NSV UTF-8 encoded commands. Hex format */
-  programId: string;
-  /** A list of command strings, representing gate operations */
-  commands: string[];
-  /** Positive number of runs */
-  runs: number;
 }
