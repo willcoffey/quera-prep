@@ -13,7 +13,8 @@ import org.springframework.pulsar.annotation.PulsarListener
 import org.springframework.pulsar.core.PulsarTemplate
 import org.apache.pulsar.client.api.DeadLetterPolicy
 import org.springframework.context.annotation.Bean
-
+import org.apache.pulsar.client.impl.MultiplierRedeliveryBackoff
+import org.springframework.pulsar.annotation.PulsarListenerConsumerBuilderCustomizer
 
 import tools.jackson.core.JacksonException
 import jakarta.validation.Validator
@@ -102,9 +103,14 @@ class QuantumComputer(
     companion object {
         @Bean
         @JvmStatic
-        fun runsDlq(): DeadLetterPolicy = DeadLetterPolicy.builder()
-            .maxRedeliverCount(5)
-            .build()
+        fun runsDlq() = DeadLetterPolicy.builder().maxRedeliverCount(8).build()
+
+        // Nack backoff 1s, 2s, 4s ... 60s cap, ≈3 min to DLQ
+        @Bean
+        @JvmStatic
+        fun runsBackoff() = PulsarListenerConsumerBuilderCustomizer<ByteArray> {
+            it.negativeAckRedeliveryBackoff(MultiplierRedeliveryBackoff.builder().maxDelayMs(60_000).build())
+        }
     }
 
 
@@ -215,7 +221,7 @@ class QuantumComputer(
             if (res == null) {
                 // If there was a network error, cache the error with a short TTL
                 // so future messages don't spam
-                cache = CacheNode(programId, null, System.nanoTime() + 60_000_000_000L)
+                cache = CacheNode(programId, null, System.nanoTime() + 5_000_000_000L)
             } else {
                 cache = CacheNode(programId, commands)
             }
