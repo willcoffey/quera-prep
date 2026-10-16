@@ -2,6 +2,21 @@
 Got MVP done, can get interface styled.
 
 ---
+# Fri Oct 16 10:38:30 AM EDT 2026
+Pushing change to claude settings for a very annoying harness behaviour. Despite
+the sandbox settings, the harness creates a `.claude` setting whenever it goes
+inside directories. This breaks the auto-discovered services and also simply
+pollutes the whole repo with `.claude` directories wherevere it is working.
+
+Another thing to note, I cannot deny folder creation. By allowing `*.ai.*` 
+files, this also allows claude to create nested dirs, like 
+`./people/eve/evil.ai.ts` if something is being auto-loaded, that could cause
+issues.
+
+`EnterWorkTree` also bypasses permissions, as it is a harness command not 
+something the agent does. So despite the deny permissions claude can still 
+create the `.claude/` directories wherever.
+
 # Fri Oct 16 10:14:38 AM EDT 2026
 Quick fix for memory leak on cache system. Whole thing needs to be cleaned up
 as it's pretty ugly, but going to wait till the end when I start looking up
