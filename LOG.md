@@ -29,6 +29,20 @@ https://github.com/Netflix/dgs-framework
 
 ---
 
+# Sat Oct 17 03:07:29 PM EDT 2026
+EnterWorkTree did not resolve the `.claude/` folder garbage. Replicated what 
+causes it.
+```
+1. Confirm the subdir has no .claude: ls -d kotlin/services/.claude
+2. Have Claude run a plain cd (no subshell): cd /abs/path/kotlin/services && pwd
+3. ls -a kotlin/services -> .claude/.cc-writes/ now exists
+```
+I added back the env portion of claude settings. This appears to resolve it.
+`"env": { "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1" }`
+
+
+
+
 # Sat Oct 17 02:28:21 PM EDT 2026
 Setup some minimal error handling so invalid programs wouldn't be retried. Also
 updated max constraint on task runs. No dead letter queue or handling on db
