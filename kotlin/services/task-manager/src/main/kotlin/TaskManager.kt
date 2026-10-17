@@ -181,7 +181,16 @@ class Endpoints(
         }.list()
 
         if (msgs.isEmpty()) return
-        for (msg in msgs) pulsar.sendAsync(msg)
+
+        /**
+         * Using plain send() works but is slow, as it waits for ack before 
+         * next message. sendAsync isn't safe without ensuring everything
+         * completes. A failed send throws and it just tries again on the
+         * schedule
+         */
+        val pending = msgs.map { msg -> pulsar.sendAsync(msg) }
+        pending.forEach { send -> send.join() }
+
         db.sql("DELETE FROM outbox WHERE run_id IN (:ids)")
             .param("ids", msgs.map { msg -> msg.runId })
             .update()
@@ -261,33 +270,37 @@ class Endpoints(
      *
      * Returns APIResponse<{
      *  taskId: number;
-     *  complete: boolean;
+     *  requested: number;
+     *  complete: number;
+     *  failed: number;
      * }>
      */
     @GetMapping("/{taskId}/status")
     fun getTaskStatus(@PathVariable @Positive taskId: Long): APIResponse<TaskStatus> {
+        // Query the database to get run and error counts associated with the
+        // task as well as the number of runs on the task.
         val task = db
             .sql(
                 """
-            SELECT (SELECT count(*) FROM run WHERE run.task_id = task.task_id), task.runs
+            SELECT
+              (SELECT count(*) FROM run WHERE run.task_id = task.task_id),
+              (SELECT count(*) FROM errors WHERE errors.task_id = task.task_id),
+              task.runs
             FROM task
             WHERE task_id = :taskId
             """
             )
             .param("taskId", taskId)
-            .query({ rs, _ -> rs.getInt(1) to rs.getInt(2) })
+            .query({ rs, _ -> Triple(rs.getInt(1), rs.getInt(2), rs.getInt(3)) })
             .optional()
             .getOrNull()
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Task $taskId not found")
 
-        if (task == null)
-            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Task $taskId not found")
-
-        val (complete, requested) = task
+        val (complete, failed, requested) = task
         return APIResponse(
-            msg = "$complete of $requested runs complete",
-            data = TaskStatus(taskId, complete >= requested)
+            msg = "$complete of $requested runs complete, $failed failed",
+            data = TaskStatus(taskId, requested, complete, failed)
         )
-
     }
 
 
@@ -356,7 +369,12 @@ data class CreateTaskBody(
 
 data class APIResponse<T>(val msg: String, val data: T)
 data class TaskId(val taskId: Long)
-data class TaskStatus(val taskId: Long, val complete: Boolean)
+data class TaskStatus(
+    val taskId: Long,
+    val requested: Int,
+    val complete: Int,
+    val failed: Int,
+)
 data class RunResults(val programId: String, val results: List<Int>)
 
 
