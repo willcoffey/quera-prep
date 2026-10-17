@@ -39,9 +39,9 @@ npm run dev
 ```
 ---
 # Tasks
- - Rate limiting. Caps.
- - Results polling
- - qc error handling
+ - ~~Rate limiting. Caps.~~
+ - ~~Results polling~~
+ - ~~qc error handling~~
 
 ## Tests
  - End to end rendered canvas vs qc.ts

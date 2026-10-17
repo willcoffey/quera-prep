@@ -181,7 +181,6 @@ class Endpoints(
         }.list()
 
         if (msgs.isEmpty()) return
-
         /**
          * Using plain send() works but is slow, as it waits for ack before 
          * next message. sendAsync isn't safe without ensuring everything

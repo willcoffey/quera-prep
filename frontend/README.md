@@ -8,6 +8,12 @@ Host dev server on port 3000
 Build static assets, served via nginx container
 `npm run build`
 
+# Todo before proceeding to testing
+ - BUG: Map button promise chain
+ - BUG: User input also has a delay, animations should handle it and let user
+spam
+ - FEAT: Add an indicator to show polling is active/inactive
+
 # Issues
  - Map button bypasses the promise chain, add map command. possibly combine gate
 matrices into larger matrix.
