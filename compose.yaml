@@ -81,6 +81,10 @@ services:
       pulsar:   { condition: service_healthy, restart: true }
     restart: on-failure
   quantum-computer:
+    deploy:
+      replicas: 4
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
     image: localhost/quantum-computer:latest
     build:
       context: kotlin
