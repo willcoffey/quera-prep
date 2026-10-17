@@ -153,14 +153,14 @@ class Endpoints(
 
 
     /**
-     * Runs every 500ms automatically, reads values from the outbox and sends
+     * Runs every 100ms automatically, reads values from the outbox and sends
      * them to pulsar. removing after pulsar confirms.
      *
-     * Drains at rate 200 tasks/second, job estimates at minutes per task
+     * Drains at rate 10,000 tasks/second
      *
      * Tasks are sent to the "runs" topic
      */
-    @Scheduled(fixedDelay = 500)
+    @Scheduled(fixedDelay = 100)
     @Transactional
     fun drainOutbox() {
         // Load oldest messages in outbox
@@ -169,7 +169,7 @@ class Endpoints(
           SELECT run_id, task_id, program_id
           FROM outbox
           ORDER BY created_at
-          LIMIT 100
+          LIMIT 1000
           FOR UPDATE SKIP LOCKED
           """
         ).query { rs, _ ->
@@ -181,7 +181,7 @@ class Endpoints(
         }.list()
 
         if (msgs.isEmpty()) return
-        for (msg in msgs) pulsar.send(msg)
+        for (msg in msgs) pulsar.sendAsync(msg)
         db.sql("DELETE FROM outbox WHERE run_id IN (:ids)")
             .param("ids", msgs.map { msg -> msg.runId })
             .update()
