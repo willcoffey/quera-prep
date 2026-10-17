@@ -29,6 +29,35 @@ https://github.com/Netflix/dgs-framework
 
 ---
 
+# Sat Oct 17 03:59:16 PM EDT 2026
+Roughly benchmarked performance after enabling 4 deploys of quantum-computer. 
+AI Tests:
+```
+Quantum-computer throughput benchmark
+
+Setup
+- Host: Linux arm64 VM (QEMU) on Apple Silicon, 4 vCPUs, 6 GB RAM
+- Whole stack on the same VM: Kong, task-manager, Postgres, Pulsar standalone, 4x quantum-computer, plus the load generator
+- quantum-computer: 4 replicas, each limited to 0.5 CPU / 256 MB (2 cores total), JVM -Xmx128m, SerialGC, C1 JIT only
+- Throughput measured end to end: submit tasks -> all results recorded by task-manager
+
+Results
+- 3 gates: ~1,500 runs/s, ~2.6 ms per run per replica (~90% overhead)
+- 10 gates: 1,091 runs/s, 3.7 ms per run per replica (~72% overhead, ~28% gates)
+- 100 gates: 322 runs/s, 12.4 ms per run per replica (~19% overhead, ~81% gates)
+- 1000 gates: 39 runs/s, 103.6 ms per run per replica (~2% overhead, ~98% gates)
+
+Model
+- Each run costs ~2.3 ms fixed overhead + ~0.1 ms per gate (per replica at 0.5 CPU)
+- Gates and overhead are equal at ~23 gates
+- Overhead caps throughput at ~1,700 runs/s regardless of program size
+- ~0.1 ms per gate is ~100x slower than expected for 8 qubits; simulator is the main bottleneck
+```
+
+I checked the typescript sim as compared to kotlin port, kotlin port was only 
+1.3x faster.
+
+
 # Sat Oct 17 03:07:29 PM EDT 2026
 EnterWorkTree did not resolve the `.claude/` folder garbage. Replicated what 
 causes it.

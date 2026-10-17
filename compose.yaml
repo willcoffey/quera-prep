@@ -18,6 +18,11 @@ services:
       KONG_DECLARATIVE_CONFIG: /kong/kong.yml  
       KONG_NGINX_WORKER_PROCESSES: "1"
       KONG_NGINX_PROXY_CLIENT_MAX_BODY_SIZE: "128k"
+      # Create a global rate limit for the server. 10 requests per second works
+      # out to about 5.5MB/s for tasks with 1000 lines and 500 runs. It takes 
+      # far more time to actually process them, so you'd get a backlog.
+      KONG_NGINX_HTTP_LIMIT_REQ_ZONE: "all zone=global:1m rate=10r/s"
+      KONG_NGINX_PROXY_LIMIT_REQ: "zone=global burst=50 nodelay"
       # Match to cloudflare tunnel
       KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:3000"
     volumes:                                 
@@ -70,7 +75,7 @@ services:
       args:
         SERVICE: task-manager
     environment:
-      JAVA_TOOL_OPTIONS: "-Xmx128m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+      JAVA_TOOL_OPTIONS: "-Xmx128m -XX:+UseSerialGC"
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/task_manager
       SPRING_DATASOURCE_USERNAME: task_manager
       SPRING_DATASOURCE_PASSWORD: ${TASK_MANAGER_DB_PASSWORD:?}
@@ -91,7 +96,7 @@ services:
       args:
         SERVICE: quantum-computer
     environment:
-      JAVA_TOOL_OPTIONS: "-Xmx128m -XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+      JAVA_TOOL_OPTIONS: "-Xmx128m -XX:+UseSerialGC"
       SPRING_PULSAR_CLIENT_SERVICE_URL: pulsar://pulsar:6650
     depends_on:
       pulsar:   { condition: service_healthy, restart: true }

@@ -251,14 +251,18 @@ mkdir -p "$OVERRIDE_DIR"
 #   DEV_CLIENT_JVM  both gradlew clients, which only relay output
 #   DEV_WATCH_JVM   continuous build daemon, also compiles kotlin in process
 #   DEV_RUN_JVM     bootRun daemon, idles while the app runs
-# The app itself takes JAVA_TOOL_OPTIONS from compose.yaml, same as prod-like
-# runs. The gradle JVMs see it too, but their own flags take precedence.
+#   DEV_APP_JVM     the app, replaces compose.yaml's JAVA_TOOL_OPTIONS. C1
+#                   only, for faster restarts and less memory. compose.yaml
+#                   leaves C2 on, the app's hot loops are ~5x slower without it
+# The gradle JVMs see JAVA_TOOL_OPTIONS too, but their own flags take
+# precedence.
 : "${DEV_WATCH_JVM:=-Xms64m -Xmx384m -XX:MaxMetaspaceSize=512m \
 -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:ReservedCodeCacheSize=128m}"
 : "${DEV_CLIENT_JVM:=-Xms16m -Xmx64m -XX:+UseSerialGC \
 -XX:TieredStopAtLevel=1}"
 : "${DEV_RUN_JVM:=-Xms64m -Xmx160m -XX:MaxMetaspaceSize=384m \
 -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
+: "${DEV_APP_JVM:=-Xmx128m -XX:+UseSerialGC -XX:TieredStopAtLevel=1}"
 
 # Paths are absolute so they don't depend on how the compose provider resolves
 # relative paths in secondary -f files.
@@ -313,6 +317,7 @@ cat >> "$OVERRIDE" <<EOF
       DEV_WATCH_JVM: "$DEV_WATCH_JVM"
       DEV_CLIENT_JVM: "$DEV_CLIENT_JVM"
       DEV_RUN_JVM: "$DEV_RUN_JVM"
+      JAVA_TOOL_OPTIONS: "$DEV_APP_JVM"
 EOF
 cat >> "$OVERRIDE" <<'EOF'
     entrypoint: ["bash", "-c"]

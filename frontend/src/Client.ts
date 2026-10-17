@@ -47,7 +47,7 @@ export class Client {
           idemKey,
           programId,
           commands: program,
-          runs: 1000,
+          runs: 500,
         } satisfies CreateTaskBody,
       ),
     });
