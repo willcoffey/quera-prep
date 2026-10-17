@@ -29,6 +29,12 @@ https://github.com/Netflix/dgs-framework
 
 ---
 
+# Sat Oct 17 02:28:21 PM EDT 2026
+Setup some minimal error handling so invalid programs wouldn't be retried. Also
+updated max constraint on task runs. No dead letter queue or handling on db
+errors for pulsar messages, including duplicate ids that would always error. As
+is it shouldn't be a problem but it is fragile.
+
 # Fri Oct 16 04:17:53 PM EDT 2026
 Testing if denying "EnterWorkTree" was any reparations on use.
 

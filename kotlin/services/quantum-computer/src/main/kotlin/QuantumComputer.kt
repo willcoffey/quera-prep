@@ -130,8 +130,14 @@ class QuantumComputer(
         deadLetterPolicy = "runsDlq",
     )
     fun run(raw: ByteArray) {
-        // Input Validation
-        val msg = parseRun(raw)
+        // Input Validation. Malformed messages will never succeed, ack and drop
+        val msg = try {
+            parseRun(raw)
+        } catch (e: InvalidTaskException) {
+            println("Dropping malformed run message: ${e.message}")
+            return
+        }
+
 
         // Create a new QC instance
         val qc = QSim(QUBITS)
@@ -150,7 +156,10 @@ class QuantumComputer(
             pulsar.send("results", json.writeValueAsString(result))
         } else {
             println("Program ${msg.programId} is invalid")
-            // @TODO - Send an error message or something
+            // Could be more efficient, sends message per run when really a
+            // message per task would be sufficient
+            val error = ErrorMsg(msg.programId, msg.taskId, msg.runId, "Invalid program")
+            pulsar.send("errors", json.writeValueAsString(error))
         }
     }
 
@@ -326,6 +335,13 @@ data class ResultMsg(
     val result: Int,
 )
 
+data class ErrorMsg(
+    val programId: String,
+    val taskId: Long,
+    val runId: UUID,
+    val message: String,
+)
+
 
 class ProgramCache(
     val cache: HashMap<String, CacheNode> = HashMap(),
@@ -365,4 +381,6 @@ private fun cachedCommands(node: CacheNode): List<Command>? {
         throw IllegalStateException("Cached network error for ${node.id}, try later")
     return node.commands
 }
+
+
 

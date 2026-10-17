@@ -10,6 +10,7 @@ import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
+import jakarta.validation.constraints.Max
 
 // Annotations for endpoints
 import org.springframework.web.bind.annotation.GetMapping
@@ -101,7 +102,8 @@ class Endpoints(
     @PulsarListener(topics = ["results"], subscriptionName = "task-manager")
     @Transactional
     fun recordRun(raw: String) {
-        val msg = json.readValue<JobMsg>(raw)
+        // Parse the message, silently swallow malformed message erorrs.
+        val msg = runCatching { json.readValue<JobMsg>(raw) }.getOrNull() ?: return
 
         // Attempt to insert the result into the results database
         val inserted = db.sql(
@@ -122,6 +124,33 @@ class Endpoints(
             ).paramSource(msg).update()
         }
     }
+
+    /**
+     * Records all errors from the topic into the database. Will have an
+     * entry for each attempted run even if they are all simply rejected
+     * for being invalid and aborting run attempt.
+     */
+    @PulsarListener(topics = ["errors"], subscriptionName = "task-manager")
+    fun recordError(raw: String) {
+        // Parse the message, silently swallow malformed message erorrs.
+        val msg = runCatching { json.readValue<ErrorMsg>(raw) }.getOrNull() ?: return
+        db.sql(
+            """
+            INSERT INTO errors (run_id, task_id, message)
+            VALUES (:runId, :taskId, :message)
+            ON CONFLICT DO NOTHING
+            """
+        ).paramSource(msg).update()
+    }
+
+
+    data class ErrorMsg(
+        val programId: String,
+        val taskId: Long,
+        val runId: UUID,
+        val message: String,
+    )
+
 
     /**
      * Runs every 500ms automatically, reads values from the outbox and sends
@@ -321,6 +350,7 @@ data class CreateTaskBody(
     @field:Size(max = 1000)
     val commands: List<@NotBlank @Size(max = 64) String>,
     @field:Positive
+    @field:Max(500)
     val runs: Int,
 )
 
@@ -344,3 +374,6 @@ data class JobMsg(
     val result: Int,
     val runId: UUID,
 )
+
+
+
