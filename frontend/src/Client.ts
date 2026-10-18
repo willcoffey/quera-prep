@@ -6,19 +6,26 @@ export class Client {
    * user interaction and new results.
    */
   bucket: number = BUCKET_SIZE;
+  polling: boolean = false;
 
   // used by wake to skip the current subscribe timeout
   private signal: () => void = () => {};
   private receiver: (data: ResponseData) => void;
+  // Triggers react re-render for polling status
+  private onChange: () => void;
   // run count of the last results sent to receiver
   private runs = 0;
-  private polling: boolean = false;
   private getProgramId: () => string;
   private mode: "FAST" | "SLOW" = "FAST";
 
-  constructor(receiver: (results: ResponseData) => void, getId: () => string) {
+  constructor(
+    receiver: (results: ResponseData) => void,
+    getId: () => string,
+    onChange: () => void,
+  ) {
     this.receiver = receiver;
     this.getProgramId = getId;
+    this.onChange = onChange;
   }
 
   /**
@@ -64,6 +71,7 @@ export class Client {
   private async subscribe(): Promise<void> {
     if (this.polling) throw new Error("Client is already polling for results");
     this.polling = true;
+    this.onChange();
     this.runs = 0;
     while (this.bucket > 0) {
       this.bucket--;
@@ -77,6 +85,7 @@ export class Client {
       );
     }
     this.polling = false;
+    this.onChange();
   }
 
   /**

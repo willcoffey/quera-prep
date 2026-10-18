@@ -48,12 +48,15 @@ export function App() {
         <AppBar
           programId={core.state.programId}
           dispatch={dispatch}
+          polling={core.state.polling}
           displayOptions={displayOptions}
           setDisplayOptions={setDisplayOptions}
+          animationSpeed={core.state.animationSpeed}
         />
         <StateSpace
           displayOptions={displayOptions}
           selectedQubits={core.state.selectedQubits}
+          animationSpeed={core.state.animationSpeed}
           results={core.state.results}
           stateVector={core.state.qc.worlds}
           // Since stateVector is always the same float, trigger render

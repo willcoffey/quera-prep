@@ -1,7 +1,7 @@
 import "./AppBar.ai.css";
 import { memo, type ReactNode } from "react";
 import type { DisplayOptions } from "../../App";
-import type { CoreEvent } from "../../Core";
+import { ANIMATION_SPEEDS, type CoreEvent } from "../../Core";
 import { Screen } from "../Utility/Screen.ai";
 import {
   Button,
@@ -15,10 +15,21 @@ import {
   Tooltip,
   TooltipTrigger,
 } from "react-aria-components";
-import { Grid2x2Icon, MenuIcon, MonitorCogIcon, PlayIcon } from "lucide-react";
+import {
+  CloudDownloadIcon,
+  CloudUploadIcon,
+  Grid2x2Icon,
+  InfinityIcon,
+  MenuIcon,
+  MonitorCogIcon,
+} from "lucide-react";
 
 interface AppBarProps {
   programId: string;
+  /** ms per gate/selection from Core; 0 is instant */
+  animationSpeed: number;
+  /** Client is fetching results; pulses the results key */
+  polling: boolean;
   dispatch: (event: CoreEvent) => void;
   displayOptions: DisplayOptions;
   setDisplayOptions: (displayOptions: DisplayOptions) => void;
@@ -35,9 +46,12 @@ const apply = (gate: string): CoreEvent =>
   ({ action: "apply-gate", args: { gate } });
 const invert = (gate: string): CoreEvent =>
   ({ action: "apply-gate", args: { gate, inverse: true } });
-/** a single qubit gate on each qubit in turn, as map mode does */
-const each = (gate: string, qs: number[]) =>
-  qs.flatMap((q) => [select([q]), apply(gate)]);
+/** a single qubit gate on each qubit at once, as map mode does. No qubits
+    is nothing: map with an empty selection would hit all 8 */
+const each = (gate: string, qs: number[]): CoreEvent[] =>
+  qs.length
+    ? [select(qs), { action: "map-gate", args: { gate } }]
+    : [];
 const bits = (n: number, qs: number[], value: 0 | 1) =>
   qs.filter((q) => ((n >> q) & 1) === value);
 
@@ -243,6 +257,15 @@ const SCRIPTS: Record<string, () => CoreEvent[]> = {
 
 const MENU_ITEMS = Object.keys(SCRIPTS);
 
+// 1x is Core's default speed (index 1); slower settings are longer durations
+const BASE_SPEED = ANIMATION_SPEEDS[1];
+
+/** e.g. 1000 → ".5×", 500 → "1×", 250 → "2×"; 0 (instant) → "∞" */
+function speedLabel(ms: number) {
+  if (!ms) return "∞";
+  return `${+(BASE_SPEED / ms).toFixed(2)}×`.replace(/^0\./, ".");
+}
+
 function Tip({ text, children }: { text: string; children: ReactNode }) {
   return (
     <TooltipTrigger delay={500}>
@@ -257,6 +280,8 @@ function Tip({ text, children }: { text: string; children: ReactNode }) {
 // memo: skips the parent's re-renders while props are unchanged
 export const AppBar = memo(function AppBar({
   programId,
+  animationSpeed,
+  polling,
   dispatch,
   displayOptions,
   setDisplayOptions,
@@ -291,24 +316,49 @@ export const AppBar = memo(function AppBar({
         </ToggleButton>
       </Tip>
 
-      <Tip text="Run job">
+      <Tip text="Animation speed">
         <Button
-          className="AppBar-button"
-          aria-label="Run job"
-          onPress={() => dispatch({ action: "run-job", args: {} })}
+          className="AppBar-button AppBar-speed"
+          aria-label={`Animation speed ${speedLabel(animationSpeed)}`}
+          onPress={() => dispatch({ action: "cycle-speed", args: {} })}
         >
-          <PlayIcon aria-hidden />
+          {animationSpeed ? speedLabel(animationSpeed) : <InfinityIcon aria-hidden />}
         </Button>
       </Tip>
 
-      {/* Left of Menu: grid / results / run / id / menu */}
+      {/* Display controls left of the id, backend (job) controls right */}
       <Screen
         className="AppBar-programId"
         aria-label="Program ID"
         value={programId}
-        placeholder="no program"
+        placeholder="N/A"
         mono
       />
+
+      <Tip text="Submit to Server">
+        <Button
+          className="AppBar-button"
+          aria-label="Submit to Server"
+          // Nothing to submit until a gate has been applied
+          isDisabled={!programId}
+          onPress={() => dispatch({ action: "run-job", args: {} })}
+        >
+          <CloudUploadIcon aria-hidden />
+        </Button>
+      </Tip>
+
+      <Tip text={polling ? "Pulling simulation results" : "Pull simulation results"}>
+        <Button
+          className="AppBar-button AppBar-pull"
+          aria-label="Pull simulation results"
+          data-polling={polling || undefined}
+          // No results to pull until a gate has been applied
+          isDisabled={!programId}
+          onPress={() => dispatch({ action: "fetch-results", args: {} })}
+        >
+          <CloudDownloadIcon aria-hidden />
+        </Button>
+      </Tip>
 
       <MenuTrigger>
         <Tip text="Menu">

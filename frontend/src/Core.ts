@@ -5,9 +5,8 @@
 import { Gates, isGate, QuantumComputer } from "./qc";
 import { Client } from "./Client";
 
-const GATE_ANIMATION_STEPS = 25;
-const GATE_ANIMATION_TIME = 10;
-export const SELECT_ANIMATION_TIME = 550;
+const FRAMERATE = 60;
+export const ANIMATION_SPEEDS = [1000, 500, 250, 0];
 
 export class Core {
   client: Client;
@@ -31,6 +30,9 @@ export class Core {
         }
       },
       () => this.state.programId,
+      () => {
+        this.state.polling = this.client.polling, this.onChange();
+      },
     );
 
     this.state = {
@@ -39,6 +41,8 @@ export class Core {
       program: [],
       selectedQubits: [],
       status: "COMPLETE",
+      animationSpeed: ANIMATION_SPEEDS[1],
+      polling: false,
     };
   }
 
@@ -47,46 +51,47 @@ export class Core {
     switch (event.action) {
       case "select-qubits":
         this.addToChain(() => Core.selectQubits(this.state, event.args.qubits));
-        this.addToChain(() => sleep(SELECT_ANIMATION_TIME));
+        this.addToChain(() =>
+          this.state.animationSpeed ? sleep(this.state.animationSpeed) : undefined
+        );
         break;
       case "toggle-qubit":
         // Generated: To allow spam clicking selections
         this.addToChain(() => {
           const s = this.state.selectedQubits;
           const q = event.args.qubit;
-          Core.selectQubits(this.state, s.includes(q) ? s.filter((x) => x !== q) : [...s, q]);
+          Core.selectQubits(
+            this.state,
+            s.includes(q) ? s.filter((x) => x !== q) : [...s, q],
+          );
         });
-        this.addToChain(() => sleep(SELECT_ANIMATION_TIME));
+        this.addToChain(() =>
+          this.state.animationSpeed ? sleep(this.state.animationSpeed) : undefined
+        );
+        break;
+      case "map-gate":
+        this.addToChain(() => this.mapGate(event.args));
         break;
       case "apply-gate":
-        this.state.status = "PROCESSING";
-        // Program update also has to be on the chain since it depends on
-        // qubit selection
-        this.addToChain(() => {
-          this.state.program.push(Core.instructionToCommandString(
-            this.state.selectedQubits,
-            event.args,
-          ));
-          // Delete any previous results, since the program has
-          // changed
-          delete this.state.results;
-          this.state.lastInstruction = {
-            ins: event.args,
-            qubits: this.state.selectedQubits,
-          };
-          // updateProgramId returns a promise, must be returned
-          return Core.updateProgramId(this.state);
-        });
+        this.addToChain(async () => {
+          const state = this.state;
+          /** Update the current state to match adding this gate to the program */
+          state.status = "PROCESSING";
+          state.program.push(
+            Core.instructionToCommandString(state.selectedQubits, event.args),
+          );
+          state.lastInstruction = { ins: event.args, qubits: state.selectedQubits };
+          delete state.results;
+          await Core.updateProgramId(state);
 
-        // Add fractional updates to the chain, so that gates appear continous
-        for (let i = 0; i < GATE_ANIMATION_STEPS; i++) {
-          this.addToChain(async () => {
-            Core.applyGateStep(this.state, event.args);
-            await sleep(GATE_ANIMATION_TIME);
-          });
-        }
-        this.addToChain(() => {
-          this.state.status = "COMPLETE";
+          /** Apply the gate in steps according to animation settings */
+          const steps = Math.ceil((state.animationSpeed * FRAMERATE) / 1000) || 1;
+          for (let i = 0; i < steps; i++) {
+            Core.applyGateStep(state, event.args, steps);
+            this.onChange();
+            if (state.animationSpeed) await sleep(state.animationSpeed / steps);
+          }
+          state.status = "COMPLETE";
         });
         break;
       case "run-job":
@@ -111,12 +116,23 @@ export class Core {
           program: [],
           selectedQubits: [],
           status: "COMPLETE",
+          animationSpeed: this.state.animationSpeed,
+          polling: this.client.polling,
         };
         this.eventChain = {
           canceled: false,
           chain: Promise.resolve(),
         };
         break;
+      case "cycle-speed": {
+        /**
+         * Immediately updates the animation speed to the next entry in the
+         * speed array
+         */
+        const i = ANIMATION_SPEEDS.indexOf(this.state.animationSpeed);
+        this.state.animationSpeed = ANIMATION_SPEEDS[(i + 1) % ANIMATION_SPEEDS.length];
+        break;
+      }
       default:
         return;
         //console.log(event.action, event.args);
@@ -141,6 +157,37 @@ export class Core {
   }
 
   /**
+   * Apply specifed gate to all selected qubits, default all. single animation
+   * AI Generated - Refactor during review
+   */
+  private async mapGate(ins: GateInstruction) {
+    // Captured: after a reset, the rest of this gate lands on the old state
+    const state = this.state;
+
+    /** Each selected qubit (all when none) gets its own program line */
+    const s = state.selectedQubits;
+    const qubits = s.length ? s : [0, 1, 2, 3, 4, 5, 6, 7];
+    state.status = "PROCESSING";
+    for (const q of qubits) state.program.push(Core.instructionToCommandString([q], ins));
+    state.lastInstruction = { ins, qubits };
+    delete state.results;
+    await Core.updateProgramId(state);
+
+    /** Apply to every qubit each step, so the map animates once */
+    if (!isGate(ins.gate)) throw "Invalid Gate";
+    const direction = ins.inverse ? "reverse" : "forward";
+    const steps = Math.ceil((state.animationSpeed * FRAMERATE) / 1000) || 1;
+    for (let i = 0; i < steps; i++) {
+      for (const q of qubits) {
+        state.qc.applyFractionalGate([q], Gates[ins.gate], direction, steps);
+      }
+      this.onChange();
+      if (state.animationSpeed) await sleep(state.animationSpeed / steps);
+    }
+    state.status = "COMPLETE";
+  }
+
+  /**
    * Adds the qubit selection to the event chain, ensures gate and partition
    * animations stay in sync
    */
@@ -161,7 +208,7 @@ export class Core {
    * Records the gate into the program and executes it over `steps` so that it
    * can be smoothly animated
    */
-  static applyGateStep(state: CoreState, ins: GateInstruction) {
+  static applyGateStep(state: CoreState, ins: GateInstruction, steps: number) {
     if (!isGate(ins.gate)) throw "Invalid Gate";
     const gate = Gates[ins.gate];
     const direction = ins.inverse ? "reverse" : "forward";
@@ -169,7 +216,7 @@ export class Core {
     // Capture currrent chait and selection since they change while this id waiting
     const qubits = state.selectedQubits;
 
-    state.qc.applyFractionalGate(qubits, gate, direction, GATE_ANIMATION_STEPS);
+    state.qc.applyFractionalGate(qubits, gate, direction, steps);
   }
 
   /**
@@ -196,17 +243,21 @@ interface CoreState {
   programId: string;
   selectedQubits: number[];
   status: "PROCESSING" | "COMPLETE";
+  animationSpeed: number;
   lastInstruction?: { ins: GateInstruction; qubits: number[] };
+  polling: boolean;
   results?: number[];
 }
 
 export type CoreEvent =
   | { action: "select-qubits"; args: { qubits: number[] } }
   | { action: "apply-gate"; args: GateInstruction }
+  | { action: "map-gate"; args: GateInstruction }
   | { action: "reset"; args: {} }
   | { action: "run-job"; args: {} }
   | { action: "fetch-results"; args: {} }
-  | { action: "toggle-qubit"; args: { qubit: number } };
+  | { action: "toggle-qubit"; args: { qubit: number } }
+  | { action: "cycle-speed"; args: {} };
 
 interface GateInstruction {
   gate: string;

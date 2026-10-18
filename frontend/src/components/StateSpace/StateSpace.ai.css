@@ -13,6 +13,25 @@
   overflow: hidden;
 }
 
+/* Hover readout: the bit string of the cell under the pointer, above it.
+   Same look as the AppBar tooltips. */
+.StateSpace-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  padding: 0.05em 0.3em;
+  background: var(--base02);
+  color: var(--base06);
+  border: 1px solid var(--base03);
+  /* 16px floor: legible on phones, above the ~12px caption minimum */
+  font: max(1rem, var(--button) * 0.28) ui-monospace, monospace;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.StateSpace-tip[data-below] {
+  transform: translate(-50%, 16px);
+}
+
 .StateSpace-canvas {
   position: absolute;
   inset: 0;

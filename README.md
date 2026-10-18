@@ -9,6 +9,13 @@ together.
 MVP functional, architecture settled. Bugfixes, filling out, review, testing
 still remain.
 
+Have a deadline now, 3 days to complete. Spent today getting it to acceptable
+point of feature complete. Tomorrow is testing. end to end rendered canvas,
+perf tests, unreliable network. Monday is documentation. README.md, mermaid
+flow diagram for task path. Tues is code review. cleanup, comments, compare
+against idiomatic kotlin repos.
+
+
 # Setup
 For cloudflare tunneling, a token must be provided in `.env`. Any password can
 be provided for postgres fields.

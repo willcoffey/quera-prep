@@ -68,6 +68,70 @@
   color: var(--base09);
 }
 
+/* Greyed out, e.g. Run job with no program */
+.AppBar-button[data-disabled] {
+  color: var(--base03);
+  cursor: default;
+}
+
+/* Pull key, the polling indicator: green legend while polling */
+.AppBar-pull[data-polling] {
+  /* brighter than --base0B so the small icon reads as active */
+  color: color-mix(in oklab, var(--base0B), white 35%);
+}
+
+/* A dot laps the key's edge while the client is polling for results */
+.AppBar-pull {
+  position: relative;
+}
+
+/* Spun by AppBar-orbit; registered so it interpolates as an angle */
+@property --orbit {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* A ring around the key's edge, a conic gradient masked to its border: the
+   head is the hard stop at --orbit, the tail fades over 3/4 of a lap */
+.AppBar-pull[data-polling]::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--button) * 0.05);
+  /* 5px at a 48px key */
+  padding: calc(var(--button) * 0.1);
+  border-radius: var(--key-radius);
+  background: conic-gradient(
+    from var(--orbit),
+    transparent 25%,
+    currentColor
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
+  animation: AppBar-orbit 2s linear infinite;
+}
+
+@keyframes AppBar-orbit {
+  to {
+    --orbit: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .AppBar-pull[data-polling]::after {
+    animation: none;
+  }
+}
+
+/* Speed label is text, not an icon: shrink so ".25×" fits the key */
+.AppBar-speed {
+  font-size: 0.8em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Tooltip and menu are portaled out of .App; --button still scales them,
    see App.ai.css. 15px and 20px at a 48px key */
 .AppBar-tooltip {

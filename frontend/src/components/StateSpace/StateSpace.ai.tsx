@@ -1,11 +1,12 @@
 import "./StateSpace.ai.css";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DisplayOptions } from "../../App";
-import { SELECT_ANIMATION_TIME } from "../../Core";
 
 interface StateSpaceProps {
   displayOptions: DisplayOptions;
   selectedQubits: number[];
+  /** ms Core waits after a selection change; 0 jumps */
+  animationSpeed: number;
   /** interleaved re/im amplitudes; Core mutates it in place */
   stateVector: Float64Array;
   /** changes whenever stateVector's contents do */
@@ -17,6 +18,7 @@ interface StateSpaceProps {
 export function StateSpace({
   displayOptions,
   selectedQubits,
+  animationSpeed,
   stateVector,
   version,
   results,
@@ -45,6 +47,36 @@ export function StateSpace({
   const transition = useRef<Transition>(null);
   const selectionKey = `${qubits}:${selectedQubits.join()}`;
 
+  // Hover readout: basis state under the pointer, by the layout the cells
+  // are at (or heading to). cellAt[row * cols + col] = basis state index.
+  const grid = useMemo(() => {
+    const { grid, pos } = layout(selectedQubits, qubits);
+    const cellAt = new Int32Array(grid.size);
+    for (let i = 0; i < grid.size; i++) {
+      cellAt[pos[2 * i] * grid.cols + pos[2 * i + 1]] = i;
+    }
+    return { ...grid, cellAt };
+  }, [selectionKey]);
+  const [hover, setHover] = useState<{ state: number; x: number; y: number }>();
+  // Cells move on a selection change, so the cell under the pointer is no
+  // longer the one named; cleared until the pointer moves again
+  useEffect(() => setHover(undefined), [selectionKey]);
+  const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const col = Math.min(grid.cols - 1, Math.max(0, Math.floor(x / r.width * grid.cols)));
+    const row = Math.min(grid.rows - 1, Math.max(0, Math.floor(y / r.height * grid.rows)));
+    setHover({ state: grid.cellAt[row * grid.cols + col], x, y });
+  };
+  // Kept inside the grid by its measured width, before paint
+  const tipRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const tip = tipRef.current, box = tip?.parentElement;
+    if (!tip || !box || !hover) return;
+    const half = tip.offsetWidth / 2;
+    tip.style.left = `${Math.min(box.clientWidth - half, Math.max(half, hover.x))}px`;
+  }, [hover]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
@@ -68,7 +100,7 @@ export function StateSpace({
         start: now,
         // Core waits this long after a selection change before the next
         // gate, so the move finishes before cells start changing.
-        duration: animate && !reducedMotion() ? SELECT_ANIMATION_TIME : 0,
+        duration: animate && !reducedMotion() ? animationSpeed : 0,
       };
     }
 
@@ -81,7 +113,7 @@ export function StateSpace({
     };
     tick();
     return () => cancelAnimationFrame(frame);
-  }, [size, empty, colors, order, selectionKey, gridLines]);
+  }, [size, empty, colors, order, selectionKey, gridLines, animationSpeed]);
 
   return (
     <div className="StateSpace">
@@ -94,7 +126,25 @@ export function StateSpace({
           : `State vector of ${qubits} qubits, ${1 << qubits} amplitudes, `) +
           `grouped by ${selectedQubits.length} selected ` +
           `qubit${selectedQubits.length === 1 ? "" : "s"}`}
+        onPointerMove={onPointerMove}
+        // A tap sends no move, so show on down; a finger "leaves" as it
+        // lifts, so touch keeps the tip until the next tap
+        onPointerDown={onPointerMove}
+        onPointerLeave={(e) => e.pointerType !== "touch" && setHover(undefined)}
       />
+      {hover && (
+        // Bit string, highest qubit first: |q7 … q0⟩
+        <div
+          ref={tipRef}
+          className="StateSpace-tip"
+          style={{ left: hover.x, top: hover.y }}
+          // Flipped under the pointer near the top, which would clip it
+          data-below={hover.y < 40 || undefined}
+          aria-hidden
+        >
+          {hover.state.toString(2).padStart(qubits, "0")}
+        </div>
+      )}
     </div>
   );
 }

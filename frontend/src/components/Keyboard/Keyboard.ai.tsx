@@ -135,17 +135,8 @@ export const Keyboard = memo(function Keyboard({
       inverse && !gate.selfInverse
         ? { gate: gate.id, inverse: true }
         : { gate: gate.id };
-    if (!map) {
-      dispatch({ action: "apply-gate", args });
-      return;
-    }
-    // Map is the gate applied to each qubit in turn (selected ones, or all
-    // when none are), built from select + apply; then restore the selection.
-    for (const q of hasQubits ? selectedQubits : QUBITS) {
-      select([q]);
-      dispatch({ action: "apply-gate", args });
-    }
-    select(selectedQubits);
+    // Map: Core applies the gate to each selected qubit (all when none)
+    dispatch({ action: map ? "map-gate" : "apply-gate", args });
   };
 
   return (
