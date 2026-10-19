@@ -123,7 +123,7 @@ export class Client {
     this.runs = 0;
     while (this.bucket > 0) {
       this.bucket--;
-      this.getResults(this.getProgramId());
+      this.handleResults(this.getResults(this.getProgramId()));
       await sleep(
         this.mode === "FAST" ? 1000 : 10000,
         (wake) => (this.signal = wake),
