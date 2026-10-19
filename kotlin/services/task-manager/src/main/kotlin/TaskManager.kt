@@ -362,7 +362,7 @@ data class CreateTaskBody(
     @field:Size(max = 1000)
     val commands: List<@NotBlank @Size(max = 64) String>,
     @field:Positive
-    @field:Max(500)
+    @field:Max(3000)
     val runs: Int,
 )
 
