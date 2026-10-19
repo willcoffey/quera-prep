@@ -1,3 +1,12 @@
+import type {
+  APIResponse,
+  CreateTaskBody,
+  ProgramData,
+  RunResultsData,
+  TaskIdData,
+  TaskStatusData,
+} from "./types";
+
 const BUCKET_SIZE = 15;
 
 export class Client {
@@ -8,9 +17,10 @@ export class Client {
   bucket: number = BUCKET_SIZE;
   polling: boolean = false;
 
+  private baseUrl: string;
   // used by wake to skip the current subscribe timeout
   private signal: () => void = () => {};
-  private receiver: (data: ResponseData) => void;
+  private receiver: (data: RunResultsData) => void;
   // Triggers react re-render for polling status
   private onChange: () => void;
   // run count of the last results sent to receiver
@@ -19,13 +29,71 @@ export class Client {
   private mode: "FAST" | "SLOW" = "FAST";
 
   constructor(
-    receiver: (results: ResponseData) => void,
+    receiver: (results: RunResultsData) => void,
     getId: () => string,
     onChange: () => void,
+    baseUrl = "",
   ) {
+    this.baseUrl = baseUrl;
     this.receiver = receiver;
     this.getProgramId = getId;
     this.onChange = onChange;
+  }
+  /**
+   * Fetch the result from the server. This relies on the server being properly
+   * RESTful, if "ok" then the json response is presumed to be the correct shape
+   *
+   * i.e. there is no validation on the response json
+   */
+  private async request<T>(
+    path: string,
+    method: "GET" | "POST" = "GET",
+    body?: unknown,
+  ): Promise<T> {
+    const init: RequestInit = { method };
+    if (body !== undefined) {
+      init.headers = { "Content-Type": "application/json" };
+      init.body = JSON.stringify(body);
+    }
+    const res = await fetch(this.baseUrl + path, init);
+    if (!res.ok) throw new Error(`${res.status} ${method} ${path} ${await res.text()}`);
+    return ((await res.json()) as APIResponse<T>).data;
+  }
+
+  /**
+   * Submits task to the server, supply idemKey if this will be retried.
+   */
+  async submitTask(
+    commands: string[],
+    runs = 500,
+    idemKey = Client.idemKey(),
+  ): Promise<number> {
+    const programId = await Client.programId(commands);
+    const body: CreateTaskBody = { idemKey, programId, commands, runs };
+    const { taskId } = await this.request<TaskIdData>("/tasks/", "POST", body);
+    return taskId;
+  }
+  async getStatus(taskId: number): Promise<TaskStatusData> {
+    return this.request<TaskStatusData>(`/tasks/${taskId}/status`);
+  }
+  async getProgram(programId: string): Promise<ProgramData> {
+    return this.request<ProgramData>(`/tasks/programs/${programId}`);
+  }
+  async getResults(programId: string): Promise<RunResultsData> {
+    return this.request<RunResultsData>(`/tasks/results/${programId}`);
+  }
+
+  /** 32 random bytes, hex encoded */
+  static idemKey(): string {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  /** SHA256 of the NSV UTF-8 encoded commands, hex encoded */
+  static async programId(commands: string[]): Promise<string> {
+    const bytes = new TextEncoder().encode(commands.join("\n"));
+    const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+    return Array.from(hash, (b) => b.toString(16).padStart(2, "0")).join("");
   }
 
   /**
@@ -40,30 +108,6 @@ export class Client {
   }
 
   /**
-   * Basic task submission to backend.
-   * No rate limiting, no retry. Simply throws on error.
-   */
-  async submitTask(programId: string, program: string[]) {
-    if (!program.length) throw new Error("Empty program, not submitting task");
-    const idemKey = crypto.getRandomValues(new Uint8Array(32)).toHex();
-    const res = await fetch("/tasks/", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(
-        {
-          idemKey,
-          programId,
-          commands: program,
-          runs: 500,
-        } satisfies CreateTaskBody,
-      ),
-    });
-    this.poll();
-    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-    return (await res.json()).data.taskId as number;
-  }
-
-  /**
    * Begin polling for results on an interval. stops polling after a timeout
    * when subsequent requests no longer have new results. Sends results to
    * receiver, resolves when polling ends.
@@ -75,10 +119,7 @@ export class Client {
     this.runs = 0;
     while (this.bucket > 0) {
       this.bucket--;
-      // Only look for results if there is a program
-      if (this.getProgramId()) {
-        this.handleResults(fetch(`/tasks/results/${this.getProgramId()}`));
-      }
+      this.getResults(this.getProgramId());
       await sleep(
         this.mode === "FAST" ? 1000 : 10000,
         (wake) => (this.signal = wake),
@@ -92,9 +133,9 @@ export class Client {
    * Basic response handler. All errors are simply swallowed until the bucket
    * drains. Results may come back out of order.
    */
-  private async handleResults(res: Promise<Response>) {
+  private async handleResults(res: Promise<RunResultsData>) {
     try {
-      const { data } = await (await res).json();
+      const data = await res;
       if (data.results.length != this.runs) {
         this.mode = "FAST";
         this.bucket = Math.min(1.3 + this.bucket, BUCKET_SIZE);
@@ -112,24 +153,4 @@ function sleep(ms: number, signal?: (wake: () => void) => void) {
     signal?.(res);
     setTimeout(res, ms);
   });
-}
-
-interface ResponseData {
-  programId: string;
-  results: number[];
-}
-
-/**
- * Request body for POST /tasks/
- * mirrors CreateTaskBody in TaskManager.kt
- */
-interface CreateTaskBody {
-  /** /[A-Z0-9]{64}/i */
-  idemKey: string;
-  /** SHA256 of NSV UTF-8 encoded commands. Hex format */
-  programId: string;
-  /** A list of command strings, representing gate operations */
-  commands: string[];
-  /** Positive number of runs */
-  runs: number;
 }

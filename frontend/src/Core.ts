@@ -103,12 +103,11 @@ export class Core {
         });
         break;
       case "run-job":
-        // Submits the task to the backend with 1000 requested runs
+        // Submits the task to the backend with 500 requested runs
         this.addToChain(() => {
-          this.client.submitTask(
-            this.state.programId,
-            this.state.program.slice(),
-          ).catch(console.error);
+          this.client.submitTask(this.state.program.slice())
+            .then(() => this.client.poll())
+            .catch(console.error);
         });
         break;
       case "fetch-results":
