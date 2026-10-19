@@ -1,6 +1,7 @@
 {
   "type": "module",
-  "scripts": { "test": "vitest" },
+  "scripts": {
+    "test": "vitest --no-file-parallelism"
+  },
   "devDependencies": { "vitest": "^5.0.5" }
 }
-

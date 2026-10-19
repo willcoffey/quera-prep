@@ -23,6 +23,7 @@ services:
       # far more time to actually process them, so you'd get a backlog.
       KONG_NGINX_HTTP_LIMIT_REQ_ZONE: "all zone=global:1m rate=10r/s"
       KONG_NGINX_PROXY_LIMIT_REQ: "zone=global burst=50 nodelay"
+      KONG_NGINX_PROXY_LIMIT_REQ_STATUS: "429"  # nginx defaults to 503
       # Match to cloudflare tunnel
       KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:3000"
     volumes:                                 
