@@ -1,6 +1,6 @@
 # Network Requests
 To `curl` localhost use the `--noproxy` option. Bash egress otherwise blocks
-direct curl. e.g. `curl --noproxy '' http://localhost:8000/tasks/alive`
+direct curl. e.g. `curl --noproxy '' http://localhost:8000/`
 
 # Pulsar access
 If `dev.ai.sh` was started with `--ai-access` it overrides `compose.yaml`
