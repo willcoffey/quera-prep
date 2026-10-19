@@ -1,75 +1,95 @@
 # Summary
-A mock backend of a spring boot/pulsar/postgres stack running a toy quantum
-computer simulator. Additionally, a react frontend showing quantum computation
-as block operations on a grid. Akin to block cellular automata with non-local
-neighborhood. Cells move on qubit selection to keep neighborhood spatially 
-together.
-
-# Current Status
-MVP functional, architecture settled. Bugfixes, filling out, review, testing
-still remain.
-
-Have a deadline now, 3 days to complete. Spent today getting it to acceptable
-point of feature complete. Tomorrow is testing. end to end rendered canvas,
-perf tests, unreliable network. Monday is documentation. README.md, mermaid
-flow diagram for task path. Tues is code review. cleanup, comments, compare
-against idiomatic kotlin repos.
-
-# Tests to write:
- - Fuzzing api
- - Unreliable network via `tc`
- - Performance
-    - max bandwidth, before after pulsar/postgres size change
- - Backend results distribution vs frontend amplitudes
- - Rate limits, failure paths
-
-# Other
- - Returned results limit
- - Idemkey on client
- - TaskManager consumes DLQ to populate errors db
- - springdoc for api docs and fuzzing?
-
+This repo is the learning artifact from building a toy quantum computing
+job orchestration system. A Kong gateway routes requests to a Kotlin/Spring
+Boot backend which uses Pulsar as a message broker and Postgres as its
+database. A React frontend provides visualization of the quantum state as well
+as controls for submitting and fetching jobs. All containerized in a rootless
+Podman setup.
 
 # Setup
-For cloudflare tunneling, a token must be provided in `.env`. Any password can
-be provided for postgres fields.
+Requires `podman` and `node` be installed.
+
+For initial setup a `.env` file in the repo root must be created with passwords
+created for Postgres.
 ```
 PG_PASSWORD=...
 TASK_MANAGER_DB_PASSWORD=...
+```
+
+Optionally, the tunnel profile can be enabled if a Cloudflare token is provided.
+This makes it simple to make the setup externally accessible when it is running
+in a sandboxed environment.
+```
+COMPOSE_PROFILES=tunnel
 TUNNEL_TOKEN="..."
 ```
 
 # Quick Start
-##  Backend
-```sh
-./dev.ai.sh --rebuild
+Build the backend
+```
+podman compose build
+```
 
-# Start dev mode on task manager service, allow AI access to pulsar.
-./dev.ai.sh task-manager --ai-access
-
-# Build the frontend to be served by nginx container
+Build the frontend
+```
 cd frontend
+npm install
 npm run build
 ```
 
-## Frontend
-From `./frontend/`
-```sh
-# Start vite dev server
-npm run dev
+Start the server (from repo root)
 ```
----
+podman compose up
+```
 
+In a web browser load `http://localhost:8000` or the Cloudflare path to see the
+web app.
 
-# Wants
- - Linter & Style
- - Review AI generated algos
- - Principled rule for ordering bitstring partitions
- - CLI for generating webp
- - Build gates that look like rotations in 2d for the partitions.
- - qasm format for strings, ability to load programs into interface
+# Development
+A development helper script, `dev.ai.sh`, is provided to streamline dev work.
+See `./dev.ai.sh -h` for help. Some use cases include:
 
-# Notes
-Architecture assumes individual runs are expensive enough that the 
-message overhead is trivial.
+A command like `./dev.ai.sh task-manager --ai-access` starts development on the
+specified (task-manager) service and publishes the Pulsar HTTP port so that an
+agent can access it. The target service is run as a single replica with Gradle
+watching and rebuilding on file change.
+
+ - `./dev.ai.sh --rebuild` - Rebuild the images. Same as `podman compose build`
+ - `./dev.ai.sh --delete-all` - Deletes containers, Pulsar and Postgres volumes
+
+# Architecture
+The architecture of this project was driven by the choice of tech stack more
+than the problem itself. Instead of having a problem and deciding how to solve
+it, I took a set of technologies and asked myself how they would be used to
+solve the problem. The result is:
+
+- A Kong gateway for routing & rate limiting
+- A Pulsar message broker for distributing jobs to processors
+- A Postgres database for storing programs and results
+- A Podman setup with multiple replicas of the job processors
+
+The largest assumption that drove the architecture is that each "run" is
+expensive. This lets me ignore the overhead of creating 1000 individual messages
+when a task is submitted with 1000 runs. Since each run will have far more
+overhead than a single message, the inefficiency doesn't matter. It also
+simplifies future work around tenancy and task priority.
+
+The run messages use a content addressed program, which both lets the messages
+remain small and allows fetching results for all runs of the same program,
+instead of just the shots associated with a single task.
+
+Duplicate runs also get recorded, since the assumption is that the quantum
+computer is expensive, and any information it provides should be retained.
+
+# Out of scope
+ - Authentication and tenancy
+ - ResultsTransformer : `/results` simply returns raw results.
+
+# Issues
+ - Error handling in QuantumComputer, DLQ catches too much and nothing
+   consumes it
+ - `/results` is unbounded
+ - The `Client` never retries on failure, never reuses an idemKey
+ - Global rate limiting vs per-client
+
 

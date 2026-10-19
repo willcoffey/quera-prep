@@ -5,10 +5,11 @@ services:
   #-------------------- Infrastructure Services --------------------     
   # Cloudflare tunnel, outbound only. Routes are set in the Cloudflare dashboard
   cloudflared:
+    profiles: [tunnel]
     image: docker.io/cloudflare/cloudflared:2026.9.1
     command: tunnel --no-autoupdate run
     environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
     restart: unless-stopped
   # Gateway, only exposed service. Routes requests to services. Kong=nginx+openresty
   kong:                                      

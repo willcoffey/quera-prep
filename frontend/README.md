@@ -1,23 +1,36 @@
 # Summary
-A quantum computing visualization. Treat qubits as neighborhood selection. Gate
-is update rule. It's a block cellular automaton with non-local neighborhood.
+A quantum computing visualizer with job submission and results viewing. The
+visualizer is inspired by block cellular automata, which operate by applying a
+local update function to alternating cell neighborhoods. I found that process
+similar to a quantum simulator, where neighborhoods can be interpreted as the
+bitstring partitions of configuration space and the local update function is
+the gate being applied.
 
-Host dev server on port 3000
-`npm run dev`
+The visualizer displays each configuration space entry as a single cell with
+its color determined by phase and brightness by magnitude using a log scale.
+Whenever the qubit selection is changed, the order of cells is adjusted such
+that members of a partition are kept spatially close and the visualizer
+animates the cell movement to new grid locations. When a gate is applied it
+smoothly animates the state change by applying it in fractional steps.
 
-Build static assets, served via nginx container
-`npm run build`
+# Setup
+```
+cd frontend
+npm install
+```
 
+# Development
+`npm run dev` starts a vite dev server with hot reloading and typechecking on
+port 3000.
 
-# Features
+# Possible Features
  - qasm strings
  - past qasm programs
  - sqrt key
  - more gates
 
-
-# Playwright Setup
-Verify playwright setup. Claude has a tendency to have issues in the sandbox, 
+# Playwright Setup Notes
+Verify playwright setup. Claude has a tendency to have issues in the sandbox,
 and then run the chrome binary manually so it can get a screenshot. Can appear
 to be functional but not be.
 
@@ -41,3 +54,4 @@ claude mcp add \
   --output-dir ~/playwright-out            `# screenshots, downloads`
 claude mcp list
 ```
+
