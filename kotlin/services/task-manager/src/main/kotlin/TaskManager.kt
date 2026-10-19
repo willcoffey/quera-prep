@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.RequestParam
 
 //Imports for http and json related processing
 import tools.jackson.databind.JsonNode
@@ -182,7 +183,7 @@ class Endpoints(
 
         if (msgs.isEmpty()) return
         /**
-         * Using plain send() works but is slow, as it waits for ack before 
+         * Using plain send() works but is slow, as it waits for ack before
          * next message. sendAsync isn't safe without ensuring everything
          * completes. A failed send throws and it just tries again on the
          * schedule
@@ -334,7 +335,8 @@ class Endpoints(
 
 
     /**
-     * Loads task run results as an array.
+     * Loads task run results as an array. May optionally specify a taskId to
+     * limit runs to only those under that task.
      *
      * Returns APIResponse<any[]>
      */
@@ -342,11 +344,22 @@ class Endpoints(
     fun results(
         @PathVariable
         @Pattern(regexp = "[0-9a-f]{64}")
-        programId: String
+        programId: String,
+        @RequestParam(required = false)
+        @Positive
+        taskId: Long?
     ): APIResponse<RunResults> {
         val results = db
-            .sql("SELECT result FROM run WHERE program_id = :programId ORDER BY created_at")
+            .sql(
+                """
+            SELECT result FROM run
+            WHERE program_id = :programId
+            AND (CAST(:taskId AS BIGINT) IS NULL OR task_id = :taskId)
+            ORDER BY created_at
+            """
+            )
             .param("programId", programId)
+            .param("taskId", taskId)
             .query { rs, _ -> rs.getInt(1) }
             .list()
         return APIResponse("Retrieved results", RunResults(programId, results.toList()))
@@ -374,6 +387,7 @@ data class TaskStatus(
     val complete: Int,
     val failed: Int,
 )
+
 data class RunResults(val programId: String, val results: List<Int>)
 
 

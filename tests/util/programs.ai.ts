@@ -1,8 +1,14 @@
+export interface Program {
+  name: string;
+  commands: string[];
+}
+
 /**
  * Hand made programs where every gate changes the measured distribution.
  * Command strings are "<qubits> <gate> <direction>", targets last.
+ * Keyed by name so duplicate names are a compile error.
  */
-export const PROGRAMS: Record<string, string[]> = {
+const DEFINITIONS: Record<string, string[]> = {
   /**
    * Permutations only, so a single outcome: q1, q2, q5, q6, q7 set. Any wrong
    * qubit, target or bit order lands somewhere else.
@@ -80,3 +86,7 @@ export const PROGRAMS: Record<string, string[]> = {
     "0 1 2 3 4 5 CCCCCNOT forward",
   ],
 };
+
+export const PROGRAMS: Program[] = Object.entries(DEFINITIONS).map(
+  ([name, commands]) => ({ name, commands })
+);

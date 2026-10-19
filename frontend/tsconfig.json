@@ -2,12 +2,13 @@
   "watchOptions": { "watchFile": "dynamicPriorityPolling" },
   "include": ["src"],
   "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
     "target": "esnext",
     "lib": ["esnext", "dom"],
     "module": "esnext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "noEmit": true,
     "types": ["vite/client"]
   }
 }

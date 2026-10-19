@@ -56,7 +56,7 @@ export class Client {
       init.body = JSON.stringify(body);
     }
     const res = await fetch(this.baseUrl + path, init);
-    if (!res.ok) throw new Error(`${res.status} ${method} ${path} ${await res.text()}`);
+    if (!res.ok) throw new ClientError(res.status, `${method} ${path} ${await res.text()}`);
     return ((await res.json()) as APIResponse<T>).data;
   }
 
@@ -79,8 +79,12 @@ export class Client {
   async getProgram(programId: string): Promise<ProgramData> {
     return this.request<ProgramData>(`/tasks/programs/${programId}`);
   }
-  async getResults(programId: string): Promise<RunResultsData> {
-    return this.request<RunResultsData>(`/tasks/results/${programId}`);
+  async getResults(programId: string, taskId?: number): Promise<RunResultsData> {
+    if (taskId !== undefined) {
+      return this.request<RunResultsData>(`/tasks/results/${programId}?taskId=${taskId}`);
+    } else {
+      return this.request<RunResultsData>(`/tasks/results/${programId}`);
+    }
   }
 
   /** 32 random bytes, hex encoded */
@@ -145,6 +149,15 @@ export class Client {
     } catch (e) {
       console.log(e);
     }
+  }
+}
+
+export class ClientError extends Error {
+  name = "ClientError";
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
   }
 }
 
