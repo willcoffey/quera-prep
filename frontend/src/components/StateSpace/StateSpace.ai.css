@@ -1,10 +1,6 @@
 /* `.calc-body > *` in App.ai.css sets placeholder styles; the doubled class
    outranks it regardless of stylesheet order. Size comes from App.ai.css. */
 .StateSpace.StateSpace {
-  /* read by the canvas renderer */
-  --empty: var(--base01);
-  --cell-line: var(--base00);
-  --group-line: #000;
   position: relative;
   display: block;
   background: var(--base01);

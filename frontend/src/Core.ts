@@ -1,3 +1,4 @@
+import { Renderer } from "./Renderer.ai";
 /**
  * @ TODO Contains many hardcodes specific to 8 qubits.
  */
@@ -9,8 +10,10 @@ const FRAMERATE = 60;
 export const ANIMATION_SPEEDS = [1000, 500, 250, 0];
 
 export class Core {
-  client: Client;
   state: CoreState;
+  client: Client;
+  renderer: Renderer;
+
   // Chain of gate execution that each take some time. for guaranteed gate order
   // on async function.
   eventChain: {
@@ -20,6 +23,7 @@ export class Core {
     canceled: false,
     chain: Promise.resolve(),
   };
+
   constructor() {
     /** Create a client that is connected to the current state */
     this.client = new Client(
@@ -34,7 +38,6 @@ export class Core {
         this.state.polling = this.client.polling, this.onChange();
       },
     );
-
     this.state = {
       qc: new QuantumComputer(8),
       programId: "",
@@ -44,13 +47,18 @@ export class Core {
       animationSpeed: ANIMATION_SPEEDS[1],
       polling: false,
     };
+
+    this.renderer = new Renderer(8);
+    this.renderer.push({ data: this.state.qc.worlds });
   }
 
   // Single command bus for processing all external events
   dispatch(event: CoreEvent) {
     switch (event.action) {
       case "select-qubits":
-        this.addToChain(() => Core.selectQubits(this.state, event.args.qubits));
+        this.addToChain(() => {
+          this.selectQubits(event.args.qubits);
+        });
         this.addToChain(() =>
           this.state.animationSpeed ? sleep(this.state.animationSpeed) : undefined
         );
@@ -60,8 +68,7 @@ export class Core {
         this.addToChain(() => {
           const s = this.state.selectedQubits;
           const q = event.args.qubit;
-          Core.selectQubits(
-            this.state,
+          this.selectQubits(
             s.includes(q) ? s.filter((x) => x !== q) : [...s, q],
           );
         });
@@ -88,6 +95,7 @@ export class Core {
           const steps = Math.ceil((state.animationSpeed * FRAMERATE) / 1000) || 1;
           for (let i = 0; i < steps; i++) {
             Core.applyGateStep(state, event.args, steps);
+            this.renderer.push({ data: this.state.qc.worlds });
             this.onChange();
             if (state.animationSpeed) await sleep(state.animationSpeed / steps);
           }
@@ -123,6 +131,8 @@ export class Core {
           canceled: false,
           chain: Promise.resolve(),
         };
+        this.renderer.push({ select: [], frames: 0 });
+        this.renderer.push({ data: this.state.qc.worlds });
         break;
       case "cycle-speed": {
         /**
@@ -181,6 +191,8 @@ export class Core {
       for (const q of qubits) {
         state.qc.applyFractionalGate([q], Gates[ins.gate], direction, steps);
       }
+      // A reset leaves this gate finishing on the old state; keep it off screen
+      if (state === this.state) this.renderer.push({ data: state.qc.worlds });
       this.onChange();
       if (state.animationSpeed) await sleep(state.animationSpeed / steps);
     }
@@ -191,8 +203,10 @@ export class Core {
    * Adds the qubit selection to the event chain, ensures gate and partition
    * animations stay in sync
    */
-  static selectQubits(state: CoreState, qubits: number[]) {
-    state.selectedQubits = qubits;
+  selectQubits(qubits: number[]) {
+    this.state.selectedQubits = qubits;
+    const frames = Math.round(this.state.animationSpeed * FRAMERATE / 1000);
+    this.renderer.push({ select: qubits, frames });
   }
 
   static async updateProgramId(state: CoreState) {
@@ -201,7 +215,9 @@ export class Core {
     // SHA256 of UTF-8 encoded text
     const hash = await crypto.subtle.digest("SHA-256", bytes);
 
-    state.programId = new Uint8Array(hash).toHex();
+    state.programId = Array.from(new Uint8Array(hash), (b) => b.toString(16).padStart(2, "0")).join(
+      "",
+    );
   }
 
   /**

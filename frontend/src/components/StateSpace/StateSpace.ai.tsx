@@ -1,6 +1,10 @@
 import "./StateSpace.ai.css";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DisplayOptions } from "../../App";
+import { Renderer } from "../../Renderer.ai";
+
+/** Frames per second, as Core steps gates */
+const FRAMERATE = 60;
 
 interface StateSpaceProps {
   displayOptions: DisplayOptions;
@@ -25,38 +29,49 @@ export function StateSpace({
 }: StateSpaceProps) {
   const qubits = Math.round(Math.log2(stateVector.length / 2));
   const { gridLines, showResults } = displayOptions;
-  const counts = useMemo(
-    // The toggle decides the view; no results yet shows an empty grid
-    () => (showResults ? countResults(results ?? [], 1 << qubits) : undefined),
-    [showResults, results, qubits],
-  );
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const empty = useEmptyColor(canvasRef);
-  // stateVector is the same array after every gate, so version is the dep.
-  const colors = useMemo(
-    () => !empty ? [] : counts
-      ? countColors(counts, empty)
-      : cellColors(stateVector, empty),
-    [counts, stateVector, version, empty],
-  );
-  const order = useMemo(
-    () => (counts ? countOrder(counts) : drawOrder(stateVector)),
-    [counts, stateVector, version],
-  );
   const size = useDevicePixelSize(canvasRef);
-  const transition = useRef<Transition>(null);
   const selectionKey = `${qubits}:${selectedQubits.join()}`;
+  // A new qubit count is a new grid, with nothing to animate from
+  const renderer = useMemo(() => new Renderer(qubits, selectedQubits), [qubits]);
 
-  // Hover readout: basis state under the pointer, by the layout the cells
-  // are at (or heading to). cellAt[row * cols + col] = basis state index.
-  const grid = useMemo(() => {
-    const { grid, pos } = layout(selectedQubits, qubits);
-    const cellAt = new Int32Array(grid.size);
-    for (let i = 0; i < grid.size; i++) {
-      cellAt[pos[2 * i] * grid.cols + pos[2 * i + 1]] = i;
-    }
-    return { ...grid, cellAt };
-  }, [selectionKey]);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !size) return;
+    canvas.width = size.width;
+    canvas.height = size.height;
+    renderer.resize(size.width, size.height);
+  }, [renderer, size]);
+  useEffect(() => renderer.push({ gridLines }), [renderer, gridLines]);
+  // stateVector is the same array after every gate, so version is the dep.
+  useEffect(() => {
+    // The toggle decides the view; no results yet shows an empty grid
+    renderer.push({ data: showResults ? results ?? [] : stateVector });
+  }, [renderer, showResults, results, stateVector, version]);
+  useEffect(() => {
+    // Core waits this long after a selection change before the next gate,
+    // so the move finishes before cells start changing.
+    const frames = reducedMotion() ? 0 : Math.round(animationSpeed * FRAMERATE / 1000);
+    renderer.push({ select: selectedQubits, frames });
+  }, [renderer, selectionKey]);
+
+  // Shows each frame as it's drawn, one per FRAMERATE tick
+  useEffect(() => {
+    const ctx = canvasRef.current?.getContext("2d");
+    if (!ctx) return;
+    let stopped = false;
+    (async () => {
+      for await (const frame of renderer) {
+        if (stopped) return;
+        if (renderer.width && renderer.height) {
+          ctx.putImageData(new ImageData(frame, renderer.width, renderer.height), 0, 0);
+        }
+        await new Promise((r) => setTimeout(r, 1000 / FRAMERATE));
+      }
+    })();
+    return () => { stopped = true; };
+  }, [renderer]);
+
   const [hover, setHover] = useState<{ state: number; x: number; y: number }>();
   // Cells move on a selection change, so the cell under the pointer is no
   // longer the one named; cleared until the pointer moves again
@@ -64,9 +79,8 @@ export function StateSpace({
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - r.left, y = e.clientY - r.top;
-    const col = Math.min(grid.cols - 1, Math.max(0, Math.floor(x / r.width * grid.cols)));
-    const row = Math.min(grid.rows - 1, Math.max(0, Math.floor(y / r.height * grid.rows)));
-    setHover({ state: grid.cellAt[row * grid.cols + col], x, y });
+    const state = renderer.cellAt(x / r.width * renderer.width, y / r.height * renderer.height);
+    setHover({ state, x, y });
   };
   // Kept inside the grid by its measured width, before paint
   const tipRef = useRef<HTMLDivElement>(null);
@@ -77,51 +91,13 @@ export function StateSpace({
     tip.style.left = `${Math.min(box.clientWidth - half, Math.max(half, hover.x))}px`;
   }, [hover]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext("2d");
-    if (!canvas || !ctx || !size || !empty) return;
-    canvas.width = size.width;
-    canvas.height = size.height;
-
-    // Retarget like a CSS transition: start from wherever cells are now,
-    // so the full duration always runs from the latest selection change.
-    const now = performance.now();
-    const prev = transition.current;
-    if (prev?.key !== selectionKey) {
-      const to = layout(selectedQubits, qubits);
-      // Nothing to animate from on first draw or a qubit count change.
-      const animate = prev?.to.grid.size === to.grid.size;
-      transition.current = {
-        key: selectionKey,
-        from: animate ? currentPositions(prev, now) : to.pos,
-        fromLines: animate ? prev.to : to,
-        to,
-        start: now,
-        // Core waits this long after a selection change before the next
-        // gate, so the move finishes before cells start changing.
-        duration: animate && !reducedMotion() ? animationSpeed : 0,
-      };
-    }
-
-    let frame = 0;
-    const tick = () => {
-      const t = transition.current!;
-      const p = progress(t, performance.now());
-      draw(ctx, size, empty.css, colors, order, t, p, gridLines);
-      if (p < 1) frame = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => cancelAnimationFrame(frame);
-  }, [size, empty, colors, order, selectionKey, gridLines, animationSpeed]);
-
   return (
     <div className="StateSpace">
       <canvas
         ref={canvasRef}
         className="StateSpace-canvas"
         role="img"
-        aria-label={(counts
+        aria-label={(showResults
           ? `Results of ${results?.length ?? 0} runs over ${1 << qubits} basis states, `
           : `State vector of ${qubits} qubits, ${1 << qubits} amplitudes, `) +
           `grouped by ${selectedQubits.length} selected ` +
@@ -149,28 +125,6 @@ export function StateSpace({
   );
 }
 
-interface Oklab { L: number; a: number; b: number; css: string }
-
-/**
- * The canvas's `--empty` in OKLab, read once on mount. Cells fade into it
- * at zero brightness and it fills the background, so the gaps that open
- * between moving cells match the empty cells around them.
- */
-function useEmptyColor(ref: React.RefObject<HTMLCanvasElement | null>) {
-  const [empty, setEmpty] = useState<Oklab>();
-  useEffect(() => {
-    const ctx = ref.current?.getContext("2d");
-    if (!ctx) return;
-    // Let the canvas normalize any CSS color to #rrggbb
-    ctx.fillStyle = getComputedStyle(ctx.canvas).getPropertyValue("--empty");
-    const hex = String(ctx.fillStyle);
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-    const { L, a, b: bb } = srgbToOklab(r, g, b);
-    setEmpty({ L, a, b: bb, css: oklabToCss(L, a, bb) });
-  }, [ref]);
-  return empty;
-}
-
 /** Canvas size in device pixels, tracked with a ResizeObserver. */
 function useDevicePixelSize(ref: React.RefObject<HTMLCanvasElement | null>) {
   const [size, setSize] = useState<{ width: number; height: number }>();
@@ -194,280 +148,6 @@ function useDevicePixelSize(ref: React.RefObject<HTMLCanvasElement | null>) {
   return size;
 }
 
-/**
- * Grid layout for a qubit selection. Each group holds the 2^k amplitudes a
- * k-qubit gate mixes: same bits on unselected qubits, every combination on
- * selected ones. Within a group the local index follows the matrix
- * convention, first selected qubit = most significant bit (U = U₀ ⊗ U₁ …),
- * laid out row-major in a landscape block. Groups are indexed the same way
- * by unselected qubits, highest qubit = most significant, so an empty
- * selection lays out basis states in natural order.
- */
-function layout(selected: number[], qubits: number) {
-  // Landscape grid, square for an even qubit count.
-  const grid = {
-    size: 1 << qubits,
-    cols: 1 << Math.ceil(qubits / 2),
-    rows: 1 << Math.floor(qubits / 2),
-  };
-  const k = selected.length;
-  const unselected = [];
-  for (let q = qubits - 1; q >= 0; q--) {
-    if (!selected.includes(q)) unselected.push(q);
-  }
-  const groupCols = 1 << Math.ceil(k / 2);
-  const groupRows = 1 << Math.floor(k / 2);
-  const groupsPerRow = grid.cols / groupCols;
-
-  const bitsOf = (i: number, qubits: number[]) =>
-    qubits.reduce((acc, q) => (acc << 1) | ((i >> q) & 1), 0);
-
-  // pos[2i], pos[2i + 1] = grid row, col of basis state i
-  const pos = new Float64Array(2 * grid.size);
-  for (let i = 0; i < grid.size; i++) {
-    const local = bitsOf(i, selected);
-    const group = bitsOf(i, unselected);
-    pos[2 * i] = Math.floor(group / groupsPerRow) * groupRows
-      + Math.floor(local / groupCols);
-    pos[2 * i + 1] = (group % groupsPerRow) * groupCols + (local % groupCols);
-  }
-  return { grid, pos, groupCols, groupRows, grouped: k > 0 };
-}
-
-type Layout = ReturnType<typeof layout>;
-
-interface Transition {
-  key: string; // selection the transition is heading to
-  from: Float64Array; // cell positions when it started
-  fromLines: Layout; // partition lines faded out
-  to: Layout; // cell positions and partition lines faded in
-  start: number;
-  duration: number;
-}
-
-/** Eased progress, 0 → 1, CSS `ease-in-out` timing: cells start slowly and
-    build speed, rather than jumping off the mark. */
-function progress({ start, duration }: Transition, now: number) {
-  return duration > 0 ? ease(Math.min(1, (now - start) / duration)) : 1;
-}
-
-function currentPositions(t: Transition, now: number) {
-  const p = progress(t, now);
-  return t.from.map((v, i) => v + (t.to.pos[i] - v) * p);
-}
-
-/** CSS `ease-in-out` = cubic-bezier(0.42, 0, 0.58, 1). Solve x(s) = x,
-    return y(s). */
-function ease(x: number) {
-  const bezier = (s: number, p1: number, p2: number) =>
-    3 * (1 - s) ** 2 * s * p1 + 3 * (1 - s) * s ** 2 * p2 + s ** 3;
-  let lo = 0, hi = 1, s = x;
-  for (let i = 0; i < 20; i++) {
-    s = (lo + hi) / 2;
-    if (bezier(s, 0.42, 0.58) < x) lo = s;
-    else hi = s;
-  }
-  return bezier(s, 0, 1);
-}
-
 function reducedMotion() {
   return matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-/**
- * Brightness is probability on a log scale, so each halving dims a cell by
- * the same step: certain = full, an even spread over all 2^n worlds = 2/(n+2),
- * and anything below a quarter of that fades to a dim floor, so tiny but
- * real amplitudes stay visible. Probabilities are relative to the total,
- * since the simulator's state isn't normalized. Color shows phase.
- */
-function cellColors(amplitudes: Float64Array, empty: Oklab) {
-  const worlds = amplitudes.length / 2;
-  const range = Math.log2(worlds) + 2; // halvings from full to empty
-  let total = 0;
-  for (const v of amplitudes) total += v * v;
-  return Array.from({ length: worlds }, (_, i) => {
-    const re = amplitudes[2 * i];
-    const im = amplitudes[2 * i + 1];
-    const p = (re * re + im * im) / (total || 1);
-    return complexColor(empty, brightnessOf(p, range), Math.atan2(im, re));
-  });
-}
-
-/** At or below this probability a cell is empty: float noise, not a state. */
-const NOISE_FLOOR = 1e-9;
-/** Lowest brightness of any cell above the noise floor: ~1.3:1 contrast
- *  against the empty color, clearly a cell with a hint of phase. */
-const MIN_BRIGHTNESS = 0.15;
-
-/** Log-scale brightness over `range` halvings, floored for real amplitudes. */
-function brightnessOf(p: number, range: number) {
-  if (p <= NOISE_FLOOR) return 0;
-  return Math.min(1, Math.max(MIN_BRIGHTNESS, 1 + Math.log2(p) / range));
-}
-
-/** Basis states by ascending magnitude. Moving cells overlap, so drawing
- *  the largest last keeps them whole on top of near-empty ones. */
-function drawOrder(amplitudes: Float64Array) {
-  const mag = (i: number) => Math.hypot(amplitudes[2 * i], amplitudes[2 * i + 1]);
-  return Array.from({ length: amplitudes.length / 2 }, (_, i) => i)
-    .sort((a, b) => mag(a) - mag(b));
-}
-
-/** How many runs measured each basis state. */
-function countResults(results: number[], worlds: number) {
-  const counts = new Uint32Array(worlds);
-  for (const r of results) if (r >= 0 && r < worlds) counts[r]++;
-  return counts;
-}
-
-/** Measured frequency on the same log scale and lightness ramp as
- *  cellColors, without hue since runs have no phase. A result seen on every
- *  run matches a certain amplitude; one never seen matches an empty cell,
- *  and one seen even once is at least dimly visible. */
-function countColors(counts: Uint32Array, empty: Oklab) {
-  const range = Math.log2(counts.length) + 2;
-  const total = counts.reduce((a, b) => a + b, 0) || 1;
-  return Array.from(counts, (c) =>
-    complexColor(empty, brightnessOf(c / total, range), 0, 0));
-}
-
-/** Basis states by ascending count, so common results draw on top. */
-function countOrder(counts: Uint32Array) {
-  return Array.from(counts, (_, i) => i).sort((a, b) => counts[a] - counts[b]);
-}
-
-function draw(
-  ctx: CanvasRenderingContext2D,
-  { width, height }: { width: number; height: number },
-  background: string,
-  colors: string[],
-  order: number[],
-  t: Transition,
-  p: number,
-  gridLines: boolean,
-) {
-  const css = getComputedStyle(ctx.canvas);
-  // 0 at rest, 1 from 15% to 85% of a move's progress. Mid-move, cells
-  // shrink to 80% over the cell line color, a subtle border, so even
-  // identical empty cells read as separate tiles sliding into place.
-  const moving = Math.min(1, 6.7 * Math.min(p, 1 - p));
-  const scale = 1 - 0.2 * moving;
-  // Same string as a zero brightness cell, so gaps never show at rest
-  ctx.fillStyle = background;
-  ctx.fillRect(0, 0, width, height);
-  if (moving > 0) {
-    ctx.globalAlpha = moving;
-    ctx.fillStyle = css.getPropertyValue("--cell-line");
-    ctx.fillRect(0, 0, width, height);
-    ctx.globalAlpha = 1;
-  }
-
-  // Snap cell edges to whole device pixels so gridlines stay crisp.
-  const { cols, rows } = t.to.grid;
-  const x = (col: number) => Math.round(col * width / cols);
-  const y = (row: number) => Math.round(row * height / rows);
-
-  const dpr = devicePixelRatio;
-  const lineWidth = (cssWidth: number) => Math.max(1, Math.round(cssWidth * dpr));
-  const lines = (stepX: number, stepY: number, cssWidth: number, color: string) => {
-    ctx.fillStyle = color;
-    const w = lineWidth(cssWidth);
-    for (let i = stepX; i < cols; i += stepX) ctx.fillRect(x(i) - (w >> 1), 0, w, height);
-    for (let i = stepY; i < rows; i += stepY) ctx.fillRect(0, y(i) - (w >> 1), width, w);
-  };
-  // Partition lines cross-fade from the old grouping to the new; they only
-  // mean something when groups span several cells. The grid lines toggle
-  // hides them too. alpha scales both, for drawing them over the cells.
-  const groupLine = css.getPropertyValue("--group-line");
-  const partitions = (alpha: number) => {
-    if (!gridLines || alpha <= 0) return;
-    for (const [l, a] of [[t.fromLines, 1 - p], [t.to, p]] as const) {
-      if (!l.grouped || a <= 0) continue;
-      ctx.globalAlpha = a * alpha;
-      lines(l.groupCols, l.groupRows, 4, groupLine);
-    }
-    ctx.globalAlpha = 1;
-  };
-  // Under the cells, so moving cells visibly cross them. At rest the cells
-  // hide this copy and the one drawn over them below shows instead.
-  partitions(1);
-
-  for (const i of order) {
-    const row = t.from[2 * i] + (t.to.pos[2 * i] - t.from[2 * i]) * p;
-    const col = t.from[2 * i + 1] + (t.to.pos[2 * i + 1] - t.from[2 * i + 1]) * p;
-    // Size comes from the destination cell, so it stays fixed while moving;
-    // rounding both edges of a fractional position makes cells wobble.
-    const toRow = t.to.pos[2 * i];
-    const toCol = t.to.pos[2 * i + 1];
-    const w = x(toCol + 1) - x(toCol);
-    const h = y(toRow + 1) - y(toRow);
-    // Shrunk about the cell's center, in whole pixels
-    const sw = Math.round(w * scale);
-    const sh = Math.round(h * scale);
-    ctx.fillStyle = colors[i];
-    ctx.fillRect(Math.round(x(toCol) + (col - toCol) * width / cols) + ((w - sw) >> 1),
-      Math.round(y(toRow) + (row - toRow) * height / rows) + ((h - sh) >> 1), sw, sh);
-  }
-
-  // Lines over the cells at rest, so groups read clearly. Faded out mid-move,
-  // where the gaps between shrunk cells already separate them and fixed
-  // lines would cut across the moving tiles.
-  if (gridLines && moving < 1) {
-    ctx.globalAlpha = 1 - moving;
-    lines(1, 1, 1, css.getPropertyValue("--cell-line"));
-    ctx.globalAlpha = 1;
-  }
-  partitions(1 - moving);
-}
-
-/**
- * Domain coloring in OKLCH, the perceptually uniform polar form of OKLab
- * (Björn Ottosson, 2020). Phase walks the hue circle at constant lightness
- * and chroma, an isoluminant cyclic map in the spirit of CET-C6/C7, so no
- * phase looks brighter than another. Brightness (0–1) blends from the
- * empty color (any tint fades out) to full lightness and chroma. Phase 0 =
- * red.
- */
-function complexColor(empty: Oklab, t: number, phase: number, chroma = 0.13) {
-  const L = empty.L + (0.75 - empty.L) * t;
-  const C = chroma * t;
-  const h = phase + (29 * Math.PI) / 180;
-  return oklabToCss(
-    L,
-    empty.a * (1 - t) + C * Math.cos(h),
-    empty.b * (1 - t) + C * Math.sin(h),
-  );
-}
-
-/** 0–255 sRGB to OKLab, the inverse of oklabToCss. */
-function srgbToOklab(r8: number, g8: number, b8: number) {
-  const lin = (c: number) => {
-    const v = c / 255;
-    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  };
-  const [r, g, b] = [lin(r8), lin(g8), lin(b8)];
-  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
-  return {
-    L: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
-    a: 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
-    b: 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
-  };
-}
-
-function oklabToCss(L: number, a: number, b: number) {
-  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
-  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
-  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
-  const r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
-  const g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
-  const bl = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
-  return `rgb(${gamma(r)} ${gamma(g)} ${gamma(bl)})`;
-}
-
-function gamma(x: number) {
-  const v = x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055;
-  return Math.round(255 * Math.min(1, Math.max(0, v)));
 }

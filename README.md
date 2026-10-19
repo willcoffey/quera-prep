@@ -15,6 +15,20 @@ perf tests, unreliable network. Monday is documentation. README.md, mermaid
 flow diagram for task path. Tues is code review. cleanup, comments, compare
 against idiomatic kotlin repos.
 
+# Tests to write:
+ - Fuzzing api
+ - Unreliable network via `tc`
+ - Performance
+    - max bandwidth, before after pulsar/postgres size change
+ - Backend results distribution vs frontend amplitudes
+ - Rate limits, failure paths
+
+# Other
+ - Returned results limit
+ - Idemkey on client
+ - TaskManager consumes DLQ to populate errors db
+ - springdoc for api docs and fuzzing?
+
 
 # Setup
 For cloudflare tunneling, a token must be provided in `.env`. Any password can
@@ -45,25 +59,12 @@ From `./frontend/`
 npm run dev
 ```
 ---
-# Tasks
- - ~~Rate limiting. Caps.~~
- - ~~Results polling~~
- - ~~qc error handling~~
 
-## Tests
- - End to end rendered canvas vs qc.ts
- - Fuzzing api
-
-# Issues
- - ~~Thread safety for program cache~~
- - ~~Dead letter Q~~
 
 # Wants
  - Linter & Style
  - Review AI generated algos
  - Principled rule for ordering bitstring partitions
- - Core.ts has a renderer that generates img data that could be used for CLI
-image generation. Component only displays.
  - CLI for generating webp
  - Build gates that look like rotations in 2d for the partitions.
  - qasm format for strings, ability to load programs into interface
