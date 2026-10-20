@@ -31,6 +31,9 @@ import org.springframework.web.client.RestClientException
 
 import org.apache.pulsar.client.api.SubscriptionType
 import org.springframework.pulsar.listener.AckMode
+import org.springframework.messaging.handler.annotation.Header
+import org.springframework.pulsar.support.PulsarHeaders
+
 
 /**
  * An AI port of my hand written typescript quantum computer simulator
@@ -114,6 +117,7 @@ class QuantumComputer(
     }
 
 
+
     /**
      * Subscribe to task events
      *
@@ -129,7 +133,7 @@ class QuantumComputer(
         ],
         deadLetterPolicy = "runsDlq",
     )
-    fun run(raw: ByteArray) {
+    fun run(raw: ByteArray, @Header(PulsarHeaders.REDELIVERY_COUNT) attempt: Int) {
         // Input Validation. Malformed messages will never succeed, ack and drop
         val msg = try {
             parseRun(raw)
@@ -140,27 +144,35 @@ class QuantumComputer(
 
 
         // Create a new QC instance
-        val qc = QSim(QUBITS)
+        try {
+            val qc = QSim(QUBITS)
 
-        // Load the program from cache, or fetch it from task-manager
-        val commands = loadProgramInstructions(msg.programId)
+            // Load the program from cache, or fetch it from task-manager
+            val commands = loadProgramInstructions(msg.programId)
 
-        // Null commands means an invalid program, but it was still fetched
-        if (commands != null) {
-            // Execute the program on the sim
-            for (command in commands)
-                qc.apply(command)
+            // Null commands means an invalid program, but it was still fetched
+            if (commands != null) {
+                // Execute the program on the sim
+                for (command in commands)
+                    qc.apply(command)
 
-            // Format the result 
-            val result = ResultMsg(msg.programId, msg.taskId, msg.runId, qc.measure())
-            pulsar.send("results", json.writeValueAsString(result))
-        } else {
-            println("Program ${msg.programId} is invalid")
-            // Could be more efficient, sends message per run when really a
-            // message per task would be sufficient
-            val error = ErrorMsg(msg.programId, msg.taskId, msg.runId, "Invalid program")
+                // Format the result 
+                val result = ResultMsg(msg.programId, msg.taskId, msg.runId, qc.measure())
+                pulsar.send("results", json.writeValueAsString(result))
+            } else {
+                println("Program ${msg.programId} is invalid")
+                // Could be more efficient, sends message per run when really a
+                // message per task would be sufficient
+                val error = ErrorMsg(msg.programId, msg.taskId, msg.runId, "Invalid program")
+                pulsar.send("errors", json.writeValueAsString(error))
+            }
+
+        } catch (e: Exception) {
+            if (attempt < 8) throw e // 8 == maxRedeliverCount, last try before DLQ
+            val error = ErrorMsg(msg.programId, msg.taskId, msg.runId, "Run failed: ${e.message}")
             pulsar.send("errors", json.writeValueAsString(error))
         }
+
     }
 
     /**
@@ -222,6 +234,7 @@ class QuantumComputer(
 
 
         // Insert the program into cache, and remove any old values
+        // Synchronized creates a lock, avoid fetching inside it
         synchronized(programCache) {
             // In case another thread inserted this while we were fetching, if 
             // so, it would have already been added. This access not recored.

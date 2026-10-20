@@ -29,6 +29,22 @@ https://github.com/Netflix/dgs-framework
 
 ---
 
+# Mon Oct 19 09:39:50 PM EDT 2026
+One thing that has been coming up a lot is all the error catching, dead 
+lettering, message parsing and that stuff. Much of it is only there **in case**
+something bad makes its way into a topic or a table. 
+
+So much of it simply stems from not noing how much trust I can put into the
+schema, how worried I am about poison messages and the like.
+
+There will always be last-mile validation, but a better more explicit boundary
+on those two items along with stricter schema enforcement would be good to have.
+
+ - it looks like schema enforcement on pulsar is mostly producer side
+   versioning, no actual validation on broker.
+ - pulsar functions for parsing and re-publishing on a trusted topic.
+ - no way to say `topix_x` is a pur function of `topic_y`
+
 # Sat Oct 17 03:59:16 PM EDT 2026
 Roughly benchmarked performance after enabling 4 deploys of quantum-computer. 
 AI Tests:

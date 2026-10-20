@@ -144,6 +144,22 @@ class Endpoints(
         ).paramSource(msg).update()
     }
 
+    /**
+     * Catchall for any unknown error coming from failed runs on qc
+     */
+    @PulsarListener(topics = ["persistent://public/default/runs-quantum-computer-DLQ"], subscriptionName = "dlq")
+    fun drainDead(raw: ByteArray) {
+        val m = runCatching { json.readValue(raw, TaskMsg::class.java) }.getOrNull() ?: return
+        // On conflict prevents case where DLQ times out an a qc error for a non-dlq error
+        db.sql(
+            """
+            INSERT INTO errors (run_id, task_id, message)
+            VALUES (:runId, :taskId, 'Unknown run failure')
+            ON CONFLICT DO NOTHING
+            """
+        ).paramSource(m).update()
+    }
+
 
     data class ErrorMsg(
         val programId: String,
@@ -195,7 +211,6 @@ class Endpoints(
             .param("ids", msgs.map { msg -> msg.runId })
             .update()
     }
-
 
     /**
      * Inserts task + outbox or finds the existing task
