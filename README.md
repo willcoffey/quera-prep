@@ -57,6 +57,18 @@ watching and rebuilding on file change.
  - `./dev.ai.sh --rebuild` - Rebuild the images. Same as `podman compose build`
  - `./dev.ai.sh --delete-all` - Deletes containers, Pulsar and Postgres volumes
 
+# AI Usage
+I use Claude as my agent of choice, so I'm not sure how this setup would
+translate to other agents.
+
+The agent is initially sandboxed as read online, then given whitelisted 
+permissions to edit files that only matcht to `*.ai.*`. I find this very useful
+to prevent it from taking to much initiative and trashing the repo. It 
+additionally functions as a means of attribution.
+
+My expectation would be that once files settle and no longer need edits, they
+can be reviewed and the `*.ai.*` part removed to block future unwanted changes.
+
 # Architecture
 The architecture of this project was driven by the choice of tech stack more
 than the problem itself. Instead of having a problem and deciding how to solve
@@ -86,9 +98,6 @@ computer is expensive, and any information it provides should be retained.
  - ResultsTransformer : `/results` simply returns raw results.
 
 # Issues
- - Error handling in QuantumComputer, DLQ catches too much and nothing
-   consumes it
- - `/results` is unbounded
  - The `Client` never retries on failure, never reuses an idemKey
  - Global rate limiting vs per-client
 
