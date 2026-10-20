@@ -28,6 +28,15 @@ https://github.com/gotson/komga
 https://github.com/Netflix/dgs-framework
 
 ---
+# Tue Oct 20 03:14:28 PM EDT 2026
+Time to triage. I'm not going to be getting a full code review in. Need to 
+get TaskManager to an acceptable state, then finish other tasks.
+ - Get claude to run another perf benchmark
+ - Get frontend up and running on github pages
+ - Write an explainer for how to use the interface
+ - Ensure readme insttructions work on a fresh clone
+
+
 # Tue Oct 20 03:08:29 PM EDT 2026
 Running the podman dev setup kills my battery life and my laptop gets hot. CPU
 usage is low. Most likely culprit is interrupts created by pulsar client. 

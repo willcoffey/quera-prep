@@ -63,5 +63,5 @@ CREATE TABLE IF NOT EXISTS errors (
 
 CREATE INDEX IF NOT EXISTS error_task_id ON errors (task_id);
 CREATE INDEX IF NOT EXISTS run_task_id ON run (task_id);
-CREATE INDEX IF NOT EXISTS run_program_id ON run (program_id);
 CREATE INDEX IF NOT EXISTS outbox_created_at ON outbox (created_at);
+CREATE INDEX IF NOT EXISTS run_program_id_created_at ON run (program_id, created_at);

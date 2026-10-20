@@ -138,7 +138,6 @@ class Endpoints(
             .optional()
             .getOrNull()
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Task $taskId not found")
-
         val (complete, failed, requested) = task
         return APIResponse(
             msg = "$complete of $requested runs complete, $failed failed",
@@ -213,7 +212,8 @@ class Endpoints(
             SELECT result FROM run
             WHERE program_id = :programId
             AND (CAST(:taskId AS BIGINT) IS NULL OR task_id = :taskId)
-            ORDER BY created_at
+            ORDER BY created_at DESC
+            LIMIT 500000
             """
             )
             .param("programId", programId)
