@@ -62,112 +62,52 @@ fun main(args: Array<String>) {
 class Endpoints(
     private val db: JdbcClient,
     private val json: ObjectMapper,
-    private val pulsar: PulsarTemplate<Any>
+    private val pulsar: PulsarTemplate<Any>,
+    private val taskService: TaskService
 ) {
     /**
-     * Creates a task and queues it for publishing. Idempotent on idemKey.
+     * POST /tasks
+     *
+     * Saves the submitted task to the database and publishes job messages to
+     * Pulsar. One for each run, immediately queued for processing.
      *
      * 201 - task created
      * 200 - identical task already exists, returns its id
      * 409 - idemKey already used by a task with a different program
      * 400 - invalid input, or programId is not the SHA256 of commands
      *
-     * Returns APIResponse<{
-     *  taskId: number;
-     * }>
+     * Returns APIResponse<{ taskId: number }>
      */
     @PostMapping("/")
-    @Transactional
     fun create(@Valid @RequestBody input: CreateTaskBody): ResponseEntity<APIResponse<TaskId>> {
-        // Does all the state mutation of inserting the command, sending the messages to trigger
-        // runs. Throws when the hash of the commands doesn't match provided id 
-        val (taskId, existing) = try {
-            // @TODO - move to service
-            insertOrFind(input)
-        } catch (e: DataIntegrityViolationException) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "programId does not match commands")
-        }
-
-        if (existing == null) {
-            return ResponseEntity.status(HttpStatus.CREATED)
-                .body(APIResponse("Task accepted", TaskId(taskId)))
-        } else if (existing == input.programId) {
-            return ResponseEntity.status(HttpStatus.OK)
-                .body(APIResponse("Task already exists", TaskId(taskId)))
-        } else {
-            throw ResponseStatusException(HttpStatus.CONFLICT, "idemKey used by a different task")
+        val result = taskService.insertOrFind(input)
+        return when {
+            // Body hash mismatch program Id
+            result == null ->
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "programId does not match commands")
+            // New task created
+            result.existingProgramId == null -> ResponseEntity.status(HttpStatus.CREATED)
+                .body(APIResponse("Task accepted", TaskId(result.taskId)))
+            // Existing task, but it matches
+            result.existingProgramId == input.programId -> ResponseEntity.status(HttpStatus.OK)
+                .body(APIResponse("Task already exists", TaskId(result.taskId)))
+            // Exsiting task, but it's a mismatch
+            else ->
+                throw ResponseStatusException(HttpStatus.CONFLICT, "idemKey used by a different task")
         }
     }
 
 
     /**
-     * Inserts task + outbox or finds the existing task
-     * Relies on being called from a @Transactional spring function
-     * @TODO Move to service
-     */
-    private fun insertOrFind(input: CreateTaskBody): InsertResult {
-        db.sql(
-            """
-        INSERT INTO programs (program_id, body)
-        VALUES (:program_id, :body)
-        ON CONFLICT (program_id) DO NOTHING
-        """
-        )
-            .param("program_id", input.programId)
-            .param("body", input.commands.joinToString("\n"))
-            .update()
-
-        val id = db
-            .sql(
-                """
-            INSERT INTO task (idem_key, program_id, runs)
-            VALUES (:idem_key, :program_id, :runs)
-            ON CONFLICT (idem_key) DO NOTHING
-            RETURNING task_id
-            """
-            )
-            .param("idem_key", input.idemKey)
-            .param("program_id", input.programId)
-            .param("runs", input.runs)
-            .query(Long::class.java)
-            .optional().getOrNull()
-
-
-
-        if (id != null) {
-            db.sql(
-                """
-            INSERT INTO outbox (task_id, program_id)
-            SELECT :task_id, :program_id FROM generate_series(1, :runs)
-            """
-            )
-                .param("task_id", id)
-                .param("program_id", input.programId)
-                .param("runs", input.runs)
-                .update()
-            return InsertResult(id, null)
-        } else {
-            val (existingId, existingProgramId) = db
-                .sql(
-                    """
-                SELECT task_id, program_id
-                FROM task
-                WHERE idem_key = :idem_key
-                """
-                )
-                .param("idem_key", input.idemKey)
-                .query({ rs, _ -> rs.getLong(1) to rs.getString(2) })
-                .single()
-            return InsertResult(
-                existingId,
-                existingProgramId
-            )
-        }
-    }
-
-
-    /**
-     * Inspects the status of a task.
+     * GET /tasks/{taskId}/status
+     *
+     * Counts the number of successful runs and error runs for the speified
+     * task. Returns those counts the the client, which decides for itself if
+     * the task is complete or not.
+     *
+     * @TODO - Two queries to count each time is excessive. A future schema
+     * refactor for simply storing status would be better. Same refactor as
+     * results to create a ResultsTransformer
      *
      * 404 - task does not exist
      *
@@ -208,8 +148,11 @@ class Endpoints(
 
 
     /**
-     * Loads a program's commands. Programs are immutable (id is the SHA256 of
-     * the body) so callers can cache by programId forever.
+     * GET /tasks/{programId}
+     *
+     * Loads the instruction list for a program. The programId is a SHA256 of
+     * the commands, so consumers can cache the program forever without risk
+     * of it getting out of sync.
      *
      * 404 - program does not exist
      * Returns APIResponse<{
@@ -236,9 +179,23 @@ class Endpoints(
 
 
     /**
-     * Loads task run results as an array. May optionally specify a taskId to
-     * limit runs to only those under that task.
+     * GET /tasks/results/{programId}[?taskId={taskId}]
      *
+     * Loads all run results for the specified program id. Results are simply
+     * a list of integers that represent the measurement made for a single shot.
+     *
+     * Optionally, a taskId can be submitted which limits runs to only those run
+     * under that taskId.
+     *
+     * @TODO A ResultsTransformer service should be added to combine results
+     * into a simpler data structure. A list of the 256 possible outcomes and
+     * their counts. This also can simplify status querying.
+     *
+     * @TODO There is no pagination or cursor, results is simply limited to a
+     * max response of 500,000 results. This represents about 1.8 mb and a
+     * compute time of ~8 min for a 10 gate program. for a 100 gate program it
+     * would be ~26 min. (Based on dev log # Sat Oct 17 03:59:16 PM EDT 2026)
+
      * Returns APIResponse<any[]>
      */
     @GetMapping("/results/{programId}")
@@ -285,7 +242,7 @@ class PulsarHandler(
      * Processes job results messages produced by a worker replica. Inserts the
      * run into the results database, and records any duplicate runs in a second
      * catchall table. Runs are considered expensive, so we record the rare
-     * instance where pulsar double sends so it can be inspected later.
+     * instance where pulsar double sends a job so it can be inspected later.
      */
     @PulsarListener(topics = ["results"], subscriptionName = "task-manager")
     @Transactional
@@ -448,5 +405,4 @@ data class ErrorMsg(
     val message: String,
 )
 
-data class InsertResult(val taskId: Long, val existingProgramId: String?)
 data class Program(val programId: String, val commands: List<String>)
