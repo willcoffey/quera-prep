@@ -28,6 +28,45 @@ https://github.com/gotson/komga
 https://github.com/Netflix/dgs-framework
 
 ---
+# Tue Oct 20 12:01:10 PM EDT 2026
+Surprised to find that Kotlin resolves classes with the same packagename
+so no import is needed. seems like magic. 
+
+---
+
+A very annoying network issue today, not fully diagnosed but got things working.
+Initially assumed it part of the refactor / code cleanup but appears unrelated.
+
+ - Working from a cafe where I've previously noticed that it has a small ipv4
+DHCP pool along with long lease times, leading to ipv6 only and issues with 
+ipv4 addresses.
+
+ - Kong was unable to route to other services, as it's DNS lookups were failing.
+The path was something like kong -> aardvark -> qemu dns -> host mac dns. The
+surprising thing to me was that kong may be leaking service hostnames via 
+dns even though they are inside the same podman network network
+
+It's been intermittent, but absolutely related to having ipv6 nameservers only.
+
+I had ipv4 and ipv6 working, but only ipv6 nameservers and it wouldn't work. I
+got it running after adding 1.1.1.1 as a nameserver to my mac, but it wasn't
+right away. Went through resetting network and dhcp cache. Didn't start working
+again until I connected to phone hotspot and back to wifi. That somehow made
+it start functioning again.
+
+However, some fixes to compose.yaml made it work regardless of other settings,
+but I wanted to know the root cause. Still need better replication to decide 
+that. for now, the settings in compose to fix it are
+
+Listed for similar fixes, keeps the dns internal. Normally kong checks SRV
+records first, which I think go up the chain eventually hitting the mac DNS,
+which was ipv6 and causing issues.
+`KONG_DNS_ORDER: "LAST,A,CNAME"`
+
+In the cloudflared block, force it to use the ipv4 cloudflare dns to establish
+the tunnel.
+`dns: [1.1.1.1]`
+
 
 # Mon Oct 19 09:39:50 PM EDT 2026
 One thing that has been coming up a lot is all the error catching, dead 
