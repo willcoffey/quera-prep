@@ -8,6 +8,7 @@ services:
     profiles: [tunnel]
     image: docker.io/cloudflare/cloudflared:2026.9.1
     command: tunnel --no-autoupdate run
+    dns: [1.1.1.1]
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
     restart: unless-stopped
@@ -27,6 +28,7 @@ services:
       KONG_NGINX_PROXY_LIMIT_REQ_STATUS: "429"  # nginx defaults to 503
       # Match to cloudflare tunnel
       KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:3000"
+      KONG_DNS_ORDER: "LAST,A,CNAME"
     volumes:                                 
       - ./kong/kong.yml:/kong/kong.yml:ro    
     ports:                                   
