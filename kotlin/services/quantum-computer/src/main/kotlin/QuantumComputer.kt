@@ -221,17 +221,14 @@ class QuantumComputer(
         }
 
         // Perform a fetch for the program
-        val res = try {
-            RestClient.builder()
-                .requestFactory(
-                    SimpleClientHttpRequestFactory().apply { setReadTimeout(5000) }
-                ).build().get()
-                .uri("http://task-manager:8080/programs/{id}", programId)
-                .retrieve()
-                .body<APIResponse<Program>>()
-        } catch (e: RestClientException) {
-            null
-        }
+        val res = RestClient.builder()
+            .requestFactory(
+                SimpleClientHttpRequestFactory().apply { setReadTimeout(5000) }
+            ).build().get()
+            .uri("http://task-manager:8080/programs/{id}", programId)
+            .retrieve()
+            .body<APIResponse<Program>>()
+
         // Parse the commands for validity outside the lock. null == invalid commands.
         val commands = res?.let { runCatching { parseCommands(it.data.commands) }.getOrNull() }
 
