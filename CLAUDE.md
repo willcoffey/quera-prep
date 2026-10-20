@@ -12,3 +12,9 @@ If `dev.ai.sh` was started with `--ai-access` it overrides `compose.yaml`
 lines to `.dev/podman.log`. Use tools such as grep to view log file. e.g.
 `grep '^task-manager-1 ' .dev/podman.log | tail -n 50` 
 to view only lines from `task-manager` service.
+
+# File Edits
+Only `*.ai.*` files are editable; all other files are write-protected.
+Don't try workarounds (scratch copies, patches). Propose changes as a plan 
+unless asked otherwise.
+
