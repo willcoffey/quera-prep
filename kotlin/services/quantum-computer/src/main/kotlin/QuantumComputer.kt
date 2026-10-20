@@ -1,40 +1,28 @@
 package quantumcomputer
 
-
-// Universal spring imports
-import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.boot.runApplication
-import org.springframework.http.client.SimpleClientHttpRequestFactory
-
-import java.util.UUID
-import tools.jackson.databind.ObjectMapper
-
-// Pulsar
-import org.springframework.pulsar.annotation.PulsarListener
-import org.springframework.pulsar.core.PulsarTemplate
-import org.apache.pulsar.client.api.DeadLetterPolicy
-import org.springframework.context.annotation.Bean
-import org.apache.pulsar.client.impl.MultiplierRedeliveryBackoff
-import org.springframework.pulsar.annotation.PulsarListenerConsumerBuilderCustomizer
-
-import tools.jackson.core.JacksonException
 import jakarta.validation.Validator
-import jakarta.validation.constraints.Max
-import jakarta.validation.constraints.NotEmpty
+import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
-import jakarta.validation.constraints.Pattern
-
-// For REST requests to pull programs from task-manager
-import org.springframework.web.client.RestClient
-import org.springframework.web.client.body
-import org.springframework.web.client.RestClientException
-
+import java.util.UUID
+import org.apache.pulsar.client.api.DeadLetterPolicy
 import org.apache.pulsar.client.api.SubscriptionType
-import org.springframework.pulsar.listener.AckMode
+import org.apache.pulsar.client.impl.MultiplierRedeliveryBackoff
+import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.runApplication
+import org.springframework.context.annotation.Bean
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.messaging.handler.annotation.Header
+import org.springframework.pulsar.annotation.PulsarListener
+import org.springframework.pulsar.annotation.PulsarListenerConsumerBuilderCustomizer
+import org.springframework.pulsar.core.PulsarTemplate
+import org.springframework.pulsar.listener.AckMode
 import org.springframework.pulsar.support.PulsarHeaders
-
+import org.springframework.web.client.RestClient
+import org.springframework.web.client.RestClientException
+import org.springframework.web.client.body
+import tools.jackson.core.JacksonException
+import tools.jackson.databind.ObjectMapper
 
 /**
  * An AI port of my hand written typescript quantum computer simulator
@@ -97,6 +85,16 @@ class QuantumComputer(
      * eventually could be replaced with local database lookup.
      */
     private val programCache = ProgramCache()
+
+    // Create a shared rest client for any task manager requests
+    private val taskManagerClient = RestClient.builder()
+        .baseUrl("http://task-manager:8080")
+        .requestFactory(
+            SimpleClientHttpRequestFactory().apply {
+                setConnectTimeout(2000)
+                setReadTimeout(5000)
+            }
+        ).build()
 
     /**
      * Dead letter q for unhandled errors processing messages that should be
@@ -221,13 +219,15 @@ class QuantumComputer(
         }
 
         // Perform a fetch for the program
-        val res = RestClient.builder()
-            .requestFactory(
-                SimpleClientHttpRequestFactory().apply { setReadTimeout(5000) }
-            ).build().get()
-            .uri("http://task-manager:8080/programs/{id}", programId)
-            .retrieve()
-            .body<APIResponse<Program>>()
+        val res = try {
+            taskManagerClient.get()
+                .uri("/programs/{id}", programId)
+                .retrieve()
+                .body<APIResponse<Program>>()
+        } catch (e: RestClientException) {
+            null
+        }
+
 
         // Parse the commands for validity outside the lock. null == invalid commands.
         val commands = res?.let { runCatching { parseCommands(it.data.commands) }.getOrNull() }

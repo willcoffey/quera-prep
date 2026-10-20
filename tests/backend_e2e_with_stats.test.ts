@@ -24,7 +24,9 @@ test(
 
     /** Continously poll status for job completion */
     for (const { taskId } of submitted) {
-      while ((await client.getStatus(taskId)).complete < RUNS) {
+      while (true) {
+        const { complete, failed } = await client.getStatus(taskId);
+        if (RUNS <= complete + failed) break;
         await new Promise((r) => setTimeout(r, 1000));
       }
     }

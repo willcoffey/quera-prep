@@ -4,8 +4,9 @@
  * `-f rawvideo -pix_fmt rgba -s WxH -i -`.
  *
  * Commands queue in order and are only drawn as frames are pulled, so a
- * slow consumer falls behind but never misses one. Timing is in frames;
- * the consumer decides how long one lasts.
+ * slow consumer falls behind but never misses one, unless it asks for the
+ * latest state only (see frames). Timing is in frames; the consumer decides
+ * how long one lasts.
  */
 
 type RGB = readonly [number, number, number];
@@ -14,6 +15,11 @@ export type Command =
   /** Interleaved re/im amplitudes, or the measured basis state of each run.
    *  Copied on push. 1 frame. */
   | { data: Float64Array | number[] }
+  /** Measured basis state of each run, shown while showResults is on.
+   *  Copied on push. 1 frame. */
+  | { results: number[] }
+  /** Show results instead of data. 1 frame */
+  | { showResults: boolean }
   /** Move cells to the layout for these qubits over `frames` frames */
   | { select: number[]; frames: number }
   /** 1 frame */
@@ -55,6 +61,10 @@ export class Renderer {
   /** Last selection pushed, so repeats queue nothing */
   private selected: string;
   private gridLines = true;
+  /** Both views are kept, so toggling between them needs no new data */
+  private showResults = false;
+  private data: Float64Array | number[] = [];
+  private results: number[] = [];
   /** Same bytes as frame, one word per pixel, for solid fills */
   private words = new Uint32Array(0);
   /** rgb of each basis state, 3 bytes apiece */
@@ -89,6 +99,7 @@ export class Renderer {
 
   push(command: Command) {
     if ("data" in command) command = { data: command.data.slice() };
+    if ("results" in command) command = { results: command.results.slice() };
     if ("select" in command) {
       const key = command.select.join();
       if (key === this.selected) return;
@@ -100,13 +111,23 @@ export class Renderer {
 
   /** `for await (const frame of renderer)`: each queued frame in order as
    *  it's pulled. Waits when there are none. */
-  async *[Symbol.asyncIterator]() {
+  [Symbol.asyncIterator]() {
+    return this.frames();
+  }
+
+  /** Same as iterating, but ends once signal aborts, without taking a
+   *  command, even if parked waiting for one. `latest` applies everything
+   *  queued up to the next move in one frame, so a consumer that falls
+   *  behind skips to the latest state instead of replaying each one. */
+  async *frames(signal?: AbortSignal, { latest = false } = {}) {
     while (true) {
       while (!this.stale && !this.queue.length && this.move.frame >= this.move.frames) {
         await new Promise<void>((resolve) => this.waiting.push(resolve));
+        if (signal?.aborted) return;
       }
+      if (signal?.aborted) return;
       this.stale = false;
-      this.step();
+      this.step(latest);
       this.draw();
       yield this.frame;
     }
@@ -127,21 +148,33 @@ export class Renderer {
 
   /** Advance a move in progress, or else take the next command. A move
    *  holds later commands until it lands, as Core waits for it too. */
-  private step() {
+  private step(latest: boolean) {
     const m = this.move;
     if (m.frame < m.frames) {
       m.frame++;
       return;
     }
-    const command = this.queue.shift();
-    if (!command) return;
-    if ("data" in command) this.setData(command.data);
-    else if ("gridLines" in command) this.gridLines = command.gridLines;
-    else {
-      const to = layout(command.select, this.qubits);
-      // Frame 1 of the move is drawn now; 0 frames jumps
-      this.move = { from: positions(m), fromLines: m.to, to, frame: 1, frames: command.frames };
-      this.retarget(to);
+    // One command per frame, or with latest, everything up to the next move
+    let command;
+    while ((command = this.queue.shift())) {
+      if ("data" in command) {
+        this.data = command.data;
+        if (!this.showResults) this.setData(this.data);
+      } else if ("results" in command) {
+        this.results = command.results;
+        if (this.showResults) this.setData(this.results);
+      } else if ("showResults" in command) {
+        this.showResults = command.showResults;
+        this.setData(this.showResults ? this.results : this.data);
+      } else if ("gridLines" in command) this.gridLines = command.gridLines;
+      else {
+        const to = layout(command.select, this.qubits);
+        // Frame 1 of the move is drawn now; 0 frames jumps
+        this.move = { from: positions(this.move), fromLines: this.move.to, to, frame: 1, frames: command.frames };
+        this.retarget(to);
+        if (command.frames > 0) return;
+      }
+      if (!latest) return;
     }
   }
 

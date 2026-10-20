@@ -1,39 +1,35 @@
 import "./StateSpace.ai.css";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { DisplayOptions } from "../../App";
-import { Renderer } from "../../Renderer.ai";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Renderer } from "../../Renderer.ai";
 
 /** Frames per second, as Core steps gates */
 const FRAMERATE = 60;
 
 interface StateSpaceProps {
-  displayOptions: DisplayOptions;
+  /** Core's renderer; Core pushes everything it draws */
+  renderer: Renderer;
   selectedQubits: number[];
   /** ms Core waits after a selection change; 0 jumps */
   animationSpeed: number;
   /** interleaved re/im amplitudes; Core mutates it in place */
   stateVector: Float64Array;
-  /** changes whenever stateVector's contents do */
-  version: number;
-  /** measured basis state of each run, shown when showResults is on */
+  /** measured basis state of each run */
   results?: number[];
+  /** Whether the renderer is showing results, for the label */
+  showResults: boolean;
 }
 
 export function StateSpace({
-  displayOptions,
+  renderer,
   selectedQubits,
-  animationSpeed,
   stateVector,
-  version,
   results,
+  showResults,
 }: StateSpaceProps) {
   const qubits = Math.round(Math.log2(stateVector.length / 2));
-  const { gridLines, showResults } = displayOptions;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const size = useDevicePixelSize(canvasRef);
   const selectionKey = `${qubits}:${selectedQubits.join()}`;
-  // A new qubit count is a new grid, with nothing to animate from
-  const renderer = useMemo(() => new Renderer(qubits, selectedQubits), [qubits]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -42,34 +38,24 @@ export function StateSpace({
     canvas.height = size.height;
     renderer.resize(size.width, size.height);
   }, [renderer, size]);
-  useEffect(() => renderer.push({ gridLines }), [renderer, gridLines]);
-  // stateVector is the same array after every gate, so version is the dep.
-  useEffect(() => {
-    // The toggle decides the view; no results yet shows an empty grid
-    renderer.push({ data: showResults ? results ?? [] : stateVector });
-  }, [renderer, showResults, results, stateVector, version]);
-  useEffect(() => {
-    // Core waits this long after a selection change before the next gate,
-    // so the move finishes before cells start changing.
-    const frames = reducedMotion() ? 0 : Math.round(animationSpeed * FRAMERATE / 1000);
-    renderer.push({ select: selectedQubits, frames });
-  }, [renderer, selectionKey]);
 
   // Shows each frame as it's drawn, one per FRAMERATE tick
   useEffect(() => {
     const ctx = canvasRef.current?.getContext("2d");
     if (!ctx) return;
-    let stopped = false;
+    // Aborting ends the loop without taking a frame, even one parked
+    // waiting for a command, so a remount's stale loop can't steal one
+    const abort = new AbortController();
     (async () => {
-      for await (const frame of renderer) {
-        if (stopped) return;
+      for await (const frame of renderer.frames(abort.signal, { latest: true })) {
+        if (abort.signal.aborted) return;
         if (renderer.width && renderer.height) {
           ctx.putImageData(new ImageData(frame, renderer.width, renderer.height), 0, 0);
         }
         await new Promise((r) => setTimeout(r, 1000 / FRAMERATE));
       }
     })();
-    return () => { stopped = true; };
+    return () => abort.abort();
   }, [renderer]);
 
   const [hover, setHover] = useState<{ state: number; x: number; y: number }>();
@@ -146,8 +132,4 @@ function useDevicePixelSize(ref: React.RefObject<HTMLCanvasElement | null>) {
     return () => observer.disconnect();
   }, [ref]);
   return size;
-}
-
-function reducedMotion() {
-  return matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

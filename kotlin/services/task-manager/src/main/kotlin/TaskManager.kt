@@ -1,55 +1,38 @@
 package taskmanager
-// Universal spring imports
-import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.boot.runApplication
 
-// Input validation
 import jakarta.validation.Valid
+import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.Pattern
 import jakarta.validation.constraints.Positive
 import jakarta.validation.constraints.Size
-import jakarta.validation.constraints.Max
-
-// Annotations for endpoints
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.RequestParam
-
-//Imports for http and json related processing
-import tools.jackson.databind.JsonNode
-import tools.jackson.databind.ObjectMapper
-import org.springframework.http.ResponseEntity
-import org.springframework.http.HttpStatus
-import org.springframework.web.server.ResponseStatusException
-import tools.jackson.module.kotlin.readValue
-
-// Database related imports
-import org.springframework.transaction.annotation.Transactional
-import org.springframework.jdbc.core.simple.JdbcClient
-import org.springframework.dao.DataIntegrityViolationException
-import kotlin.jvm.optionals.getOrNull
 import java.util.UUID
-
-// Pulsar
-import org.springframework.scheduling.annotation.EnableScheduling
-import org.springframework.scheduling.annotation.Scheduled
+import kotlin.jvm.optionals.getOrNull
+import org.springframework.boot.autoconfigure.SpringBootApplication
+import org.springframework.boot.runApplication
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.pulsar.annotation.PulsarListener
 import org.springframework.pulsar.annotation.PulsarMessage
 import org.springframework.pulsar.core.PulsarTemplate
-
-import org.springframework.pulsar.annotation.PulsarListener
-import org.apache.pulsar.common.schema.SchemaType
+import org.springframework.scheduling.annotation.EnableScheduling
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RestController
+import org.springframework.web.server.ResponseStatusException
+import tools.jackson.databind.ObjectMapper
+import tools.jackson.module.kotlin.readValue
 
-
-// We use scheduling for draining the outbox
 @SpringBootApplication
 class TaskManager
-
 
 // JVM entry point
 fun main(args: Array<String>) {
@@ -60,10 +43,8 @@ fun main(args: Array<String>) {
 
 @RestController
 class Endpoints(
+    private val taskService: TaskService,
     private val db: JdbcClient,
-    private val json: ObjectMapper,
-    private val pulsar: PulsarTemplate<Any>,
-    private val taskService: TaskService
 ) {
     /**
      * POST /tasks
@@ -147,7 +128,7 @@ class Endpoints(
 
 
     /**
-     * GET /tasks/{programId}
+     * GET /programs/{programId}
      *
      * Loads the instruction list for a program. The programId is a SHA256 of
      * the commands, so consumers can cache the program forever without risk
@@ -194,7 +175,7 @@ class Endpoints(
      * max response of 500,000 results. This represents about 1.8 mb and a
      * compute time of ~8 min for a 10 gate program. for a 100 gate program it
      * would be ~26 min. (Based on dev log # Sat Oct 17 03:59:16 PM EDT 2026)
-
+     *
      * Returns APIResponse<any[]>
      */
     @GetMapping("/results/{programId}")
@@ -220,7 +201,7 @@ class Endpoints(
             .param("taskId", taskId)
             .query { rs, _ -> rs.getInt(1) }
             .list()
-        return APIResponse("Retrieved results", RunResults(programId, results.toList()))
+        return APIResponse("Retrieved results", RunResults(programId, results))
     }
 }
 
@@ -304,7 +285,6 @@ class PulsarHandler(
     )
     fun drainDead(raw: ByteArray) {
         val m = runCatching { json.readValue(raw, TaskMsg::class.java) }.getOrNull() ?: return
-        // On conflict prevents case where DLQ times out an a qc error for a non-dlq error
         db.sql(
             """
             INSERT INTO errors (run_id, task_id, message)
@@ -317,7 +297,7 @@ class PulsarHandler(
     /**
      * Runs on a schedule to drain the outbox table. This is required to tie
      * message sending to an atomic operation so there is no risk of recording
-     * a request to the database without also sending to on a topic.
+     * a request to the database without also sending to a topic.
      */
     @Scheduled(fixedDelay = 100)
     @Transactional
@@ -343,14 +323,30 @@ class PulsarHandler(
         /**
          * Using plain send() works but is slow, as it waits for ack before
          * next message. sendAsync isn't safe without ensuring everything
-         * completes. A failed send throws and it just tries again on the
-         * schedule
+         * completes.
          */
         val pending = msgs.map { msg -> pulsar.sendAsync(msg) }
-        pending.forEach { send -> send.join() }
 
+        /**
+         * Avoids reverting all messages when only 1 fails.
+         *
+         * zip combines the msgs list with the pending list, creating a new
+         * list of the same length with each entry being a tuple of the msg
+         * and its pending response.
+         *
+         * Filter removes anything in the list that didn't succeed by using
+         * join to wait for the message response, catching any throw and only
+         * returning true on success.
+         *
+         * Then the list is mapped to just be the ids that succeeded, and
+         * deletes them from the outbox.
+         */
+        val sent = msgs.zip(pending)
+            .filter { (_, send) -> runCatching { send.join() }.isSuccess }
+            .map { (msg, _) -> msg.runId }
+        if (sent.isEmpty()) return
         db.sql("DELETE FROM outbox WHERE run_id IN (:ids)")
-            .param("ids", msgs.map { msg -> msg.runId })
+            .param("ids", sent)
             .update()
     }
 }
@@ -391,7 +387,6 @@ data class TaskMsg(
 )
 
 data class JobMsg(
-    @field:Positive
     val taskId: Long,
     val programId: String,
     val result: Int,

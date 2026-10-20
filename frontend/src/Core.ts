@@ -30,6 +30,7 @@ export class Core {
       (data) => {
         if (data.programId == this.state.programId) {
           this.state.results = data.results;
+          this.renderer.push({ results: data.results });
           this.onChange();
         }
       },
@@ -38,18 +39,24 @@ export class Core {
         this.state.polling = this.client.polling, this.onChange();
       },
     );
-    this.state = {
+    this.state = Core.initialState();
+    this.renderer = new Renderer(8);
+    this.renderer.push({ data: this.state.qc.worlds });
+  }
+
+  /** Create a new state, using values from provided state where applicable */
+  static initialState(prev?: CoreState, polling = false): CoreState {
+    return {
       qc: new QuantumComputer(8),
       programId: "",
       program: [],
       selectedQubits: [],
       status: "COMPLETE",
-      animationSpeed: ANIMATION_SPEEDS[1],
-      polling: false,
+      animationSpeed: prev?.animationSpeed ?? ANIMATION_SPEEDS[1],
+      gridLines: prev?.gridLines ?? true,
+      showResults: prev?.showResults ?? false,
+      polling,
     };
-
-    this.renderer = new Renderer(8);
-    this.renderer.push({ data: this.state.qc.worlds });
   }
 
   // Single command bus for processing all external events
@@ -89,13 +96,14 @@ export class Core {
           );
           state.lastInstruction = { ins: event.args, qubits: state.selectedQubits };
           delete state.results;
+          if (this.state === state) this.renderer.push({ results: [] });
           await Core.updateProgramId(state);
 
           /** Apply the gate in steps according to animation settings */
           const steps = Math.ceil((state.animationSpeed * FRAMERATE) / 1000) || 1;
           for (let i = 0; i < steps; i++) {
             Core.applyGateStep(state, event.args, steps);
-            this.renderer.push({ data: this.state.qc.worlds });
+            if (this.state === state) this.renderer.push({ data: this.state.qc.worlds });
             this.onChange();
             if (state.animationSpeed) await sleep(state.animationSpeed / steps);
           }
@@ -117,20 +125,15 @@ export class Core {
         break;
       case "reset":
         this.eventChain.canceled = true;
-        this.state = {
-          qc: new QuantumComputer(8),
-          programId: "",
-          program: [],
-          selectedQubits: [],
-          status: "COMPLETE",
-          animationSpeed: this.state.animationSpeed,
-          polling: this.client.polling,
-        };
+        this.state = Core.initialState(this.state, this.client.polling);
         this.eventChain = {
           canceled: false,
           chain: Promise.resolve(),
         };
-        this.renderer.push({ select: [], frames: 0 });
+        this.renderer = new Renderer(8);
+        /** Initialize the new renderer with the state from core */
+        this.renderer.push({ gridLines: this.state.gridLines });
+        this.renderer.push({ showResults: this.state.showResults });
         this.renderer.push({ data: this.state.qc.worlds });
         break;
       case "cycle-speed": {
@@ -142,9 +145,17 @@ export class Core {
         this.state.animationSpeed = ANIMATION_SPEEDS[(i + 1) % ANIMATION_SPEEDS.length];
         break;
       }
+      case "toggle-grid":
+        this.state.gridLines = event.args.show;
+        this.renderer.push({ gridLines: this.state.gridLines });
+        break;
+      case "toggle-results":
+        this.state.showResults = event.args.show;
+        this.renderer.push({ showResults: this.state.showResults });
+        if (this.state.showResults) this.client.poll();
+        break;
       default:
         return;
-        //console.log(event.action, event.args);
     }
 
     // Triggers for ANY change, and does not provide source
@@ -180,6 +191,7 @@ export class Core {
     for (const q of qubits) state.program.push(Core.instructionToCommandString([q], ins));
     state.lastInstruction = { ins, qubits };
     delete state.results;
+    if (this.state === state) this.renderer.push({ results: [] });
     await Core.updateProgramId(state);
 
     /** Apply to every qubit each step, so the map animates once */
@@ -262,6 +274,8 @@ interface CoreState {
   lastInstruction?: { ins: GateInstruction; qubits: number[] };
   polling: boolean;
   results?: number[];
+  gridLines: boolean;
+  showResults: boolean;
 }
 
 export type CoreEvent =
@@ -272,7 +286,9 @@ export type CoreEvent =
   | { action: "run-job"; args: {} }
   | { action: "fetch-results"; args: {} }
   | { action: "toggle-qubit"; args: { qubit: number } }
-  | { action: "cycle-speed"; args: {} };
+  | { action: "cycle-speed"; args: {} }
+  | { action: "toggle-grid"; args: { show: boolean } }
+  | { action: "toggle-results"; args: { show: boolean } };
 
 interface GateInstruction {
   gate: string;

@@ -119,12 +119,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .AppBar-pull[data-polling]::after {
-    animation: none;
-  }
-}
-
 /* Speed label is text, not an icon: shrink so ".25×" fits the key */
 .AppBar-speed {
   font-size: 0.8em;

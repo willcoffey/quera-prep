@@ -1,6 +1,5 @@
 import "./AppBar.ai.css";
 import { memo, type ReactNode } from "react";
-import type { DisplayOptions } from "../../App";
 import { ANIMATION_SPEEDS, type CoreEvent } from "../../Core";
 import { Screen } from "../Utility/Screen.ai";
 import {
@@ -31,8 +30,8 @@ interface AppBarProps {
   /** Client is fetching results; pulses the results key */
   polling: boolean;
   dispatch: (event: CoreEvent) => void;
-  displayOptions: DisplayOptions;
-  setDisplayOptions: (displayOptions: DisplayOptions) => void;
+  gridLines: boolean;
+  showResults: boolean;
 }
 
 /*
@@ -283,8 +282,8 @@ export const AppBar = memo(function AppBar({
   animationSpeed,
   polling,
   dispatch,
-  displayOptions,
-  setDisplayOptions,
+  gridLines,
+  showResults,
 }: AppBarProps) {
   return (
     <div className="AppBar">
@@ -292,10 +291,8 @@ export const AppBar = memo(function AppBar({
         <ToggleButton
           className="AppBar-button AppBar-toggle"
           aria-label="Grid lines"
-          isSelected={displayOptions.gridLines}
-          onChange={(gridLines) =>
-            setDisplayOptions({ ...displayOptions, gridLines })
-          }
+          isSelected={gridLines}
+          onChange={(show) => dispatch({ action: "toggle-grid", args: { show } })}
         >
           <Grid2x2Icon aria-hidden />
         </ToggleButton>
@@ -305,12 +302,9 @@ export const AppBar = memo(function AppBar({
         <ToggleButton
           className="AppBar-button AppBar-toggle"
           aria-label="Simulation results"
-          isSelected={displayOptions.showResults}
-          onChange={(showResults) => {
-            setDisplayOptions({ ...displayOptions, showResults });
-            // Turning results on refreshes them for the current program
-            if (showResults) dispatch({ action: "fetch-results", args: {} });
-          }}
+          isSelected={showResults}
+          // Core also refreshes results when this turns on
+          onChange={(show) => dispatch({ action: "toggle-results", args: { show } })}
         >
           <MonitorCogIcon aria-hidden />
         </ToggleButton>
