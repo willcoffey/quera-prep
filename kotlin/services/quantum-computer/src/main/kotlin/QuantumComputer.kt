@@ -4,6 +4,7 @@ package quantumcomputer
 // Universal spring imports
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 
 import java.util.UUID
 import tools.jackson.databind.ObjectMapper
@@ -117,7 +118,6 @@ class QuantumComputer(
     }
 
 
-
     /**
      * Subscribe to task events
      *
@@ -222,7 +222,10 @@ class QuantumComputer(
 
         // Perform a fetch for the program
         val res = try {
-            RestClient.create().get()
+            RestClient.builder()
+                .requestFactory(
+                    SimpleClientHttpRequestFactory().apply { setReadTimeout(5000) }
+                ).build().get()
                 .uri("http://task-manager:8080/programs/{id}", programId)
                 .retrieve()
                 .body<APIResponse<Program>>()
