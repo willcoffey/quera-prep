@@ -45,15 +45,18 @@ import org.springframework.pulsar.annotation.PulsarListener
 import org.apache.pulsar.common.schema.SchemaType
 import org.springframework.stereotype.Component
 
+
+// We use scheduling for draining the outbox
+@SpringBootApplication
+class TaskManager
+
+
 // JVM entry point
 fun main(args: Array<String>) {
     /** Starts all the magical spring auto-config etc */
     runApplication<TaskManager>(*args)
 }
 
-@SpringBootApplication
-@EnableScheduling
-class TaskManager
 
 @RestController
 class Endpoints(
@@ -61,7 +64,6 @@ class Endpoints(
     private val json: ObjectMapper,
     private val pulsar: PulsarTemplate<Any>
 ) {
-
     /**
      * Creates a task and queues it for publishing. Idempotent on idemKey.
      *
@@ -69,6 +71,7 @@ class Endpoints(
      * 200 - identical task already exists, returns its id
      * 409 - idemKey already used by a task with a different program
      * 400 - invalid input, or programId is not the SHA256 of commands
+     *
      * Returns APIResponse<{
      *  taskId: number;
      * }>
@@ -79,6 +82,7 @@ class Endpoints(
         // Does all the state mutation of inserting the command, sending the messages to trigger
         // runs. Throws when the hash of the commands doesn't match provided id 
         val (taskId, existing) = try {
+            // @TODO - move to service
             insertOrFind(input)
         } catch (e: DataIntegrityViolationException) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "programId does not match commands")
@@ -97,124 +101,9 @@ class Endpoints(
 
 
     /**
-     * Inserts the result of a run into the database, and, if it is the
-     * final run for that task, marks the task as complete
-     */
-    @PulsarListener(topics = ["results"], subscriptionName = "task-manager")
-    @Transactional
-    fun recordRun(raw: String) {
-        // Parse the message, silently swallow malformed message erorrs.
-        val msg = runCatching { json.readValue<JobMsg>(raw) }.getOrNull() ?: return
-
-        // Attempt to insert the result into the results database
-        val inserted = db.sql(
-            """
-            INSERT INTO run (run_id, task_id, program_id, result)
-            VALUES (:runId, :taskId, :programId, :result)
-            ON CONFLICT DO NOTHING
-            """
-        ).paramSource(msg).update()
-
-        // If the insert didn't run, this is a duplicate. record it.
-        if (inserted == 0) {
-            db.sql(
-                """
-                INSERT INTO duplicate_runs (run_id, task_id, program_id, result)
-                VALUES (:runId, :taskId, :programId, :result)
-                """
-            ).paramSource(msg).update()
-        }
-    }
-
-    /**
-     * Records all errors from the topic into the database. Will have an
-     * entry for each attempted run even if they are all simply rejected
-     * for being invalid and aborting run attempt.
-     */
-    @PulsarListener(topics = ["errors"], subscriptionName = "task-manager")
-    fun recordError(raw: String) {
-        // Parse the message, silently swallow malformed message erorrs.
-        val msg = runCatching { json.readValue<ErrorMsg>(raw) }.getOrNull() ?: return
-        db.sql(
-            """
-            INSERT INTO errors (run_id, task_id, message)
-            VALUES (:runId, :taskId, :message)
-            ON CONFLICT DO NOTHING
-            """
-        ).paramSource(msg).update()
-    }
-
-    /**
-     * Catchall for any unknown error coming from failed runs on qc
-     */
-    @PulsarListener(topics = ["persistent://public/default/runs-quantum-computer-DLQ"], subscriptionName = "dlq")
-    fun drainDead(raw: ByteArray) {
-        val m = runCatching { json.readValue(raw, TaskMsg::class.java) }.getOrNull() ?: return
-        // On conflict prevents case where DLQ times out an a qc error for a non-dlq error
-        db.sql(
-            """
-            INSERT INTO errors (run_id, task_id, message)
-            VALUES (:runId, :taskId, 'Unknown run failure')
-            ON CONFLICT DO NOTHING
-            """
-        ).paramSource(m).update()
-    }
-
-
-    data class ErrorMsg(
-        val programId: String,
-        val taskId: Long,
-        val runId: UUID,
-        val message: String,
-    )
-
-
-    /**
-     * Runs every 100ms automatically, reads values from the outbox and sends
-     * them to pulsar. removing after pulsar confirms.
-     *
-     * Drains at rate 10,000 tasks/second
-     *
-     * Tasks are sent to the "runs" topic
-     */
-    @Scheduled(fixedDelay = 100)
-    @Transactional
-    fun drainOutbox() {
-        // Load oldest messages in outbox
-        val msgs = db.sql(
-            """
-          SELECT run_id, task_id, program_id
-          FROM outbox
-          ORDER BY created_at
-          LIMIT 1000
-          FOR UPDATE SKIP LOCKED
-          """
-        ).query { rs, _ ->
-            TaskMsg(
-                rs.getObject("run_id", UUID::class.java),
-                rs.getLong("task_id"),
-                rs.getString("program_id"),
-            )
-        }.list()
-
-        if (msgs.isEmpty()) return
-        /**
-         * Using plain send() works but is slow, as it waits for ack before
-         * next message. sendAsync isn't safe without ensuring everything
-         * completes. A failed send throws and it just tries again on the
-         * schedule
-         */
-        val pending = msgs.map { msg -> pulsar.sendAsync(msg) }
-        pending.forEach { send -> send.join() }
-
-        db.sql("DELETE FROM outbox WHERE run_id IN (:ids)")
-            .param("ids", msgs.map { msg -> msg.runId })
-            .update()
-    }
-
-    /**
      * Inserts task + outbox or finds the existing task
      * Relies on being called from a @Transactional spring function
+     * @TODO Move to service
      */
     private fun insertOrFind(input: CreateTaskBody): InsertResult {
         db.sql(
@@ -276,7 +165,6 @@ class Endpoints(
         }
     }
 
-    private data class InsertResult(val taskId: Long, val existingProgramId: String?)
 
     /**
      * Inspects the status of a task.
@@ -346,8 +234,6 @@ class Endpoints(
         return APIResponse("Retrieved program", Program(programId, body.split("\n")))
     }
 
-    data class Program(val programId: String, val commands: List<String>)
-
 
     /**
      * Loads task run results as an array. May optionally specify a taskId to
@@ -380,6 +266,140 @@ class Endpoints(
         return APIResponse("Retrieved results", RunResults(programId, results.toList()))
     }
 }
+
+
+/**
+ * Component for managing Pulsar interactions. Contains all Pulsar
+ * Listeners, handles the dead letter queue, and schedules function
+ * executions to drain the outbox.
+ */
+@Component
+@EnableScheduling
+class PulsarHandler(
+    private val tasks: TaskService,
+    private val json: ObjectMapper,
+    private val pulsar: PulsarTemplate<Any>,
+    private val db: JdbcClient,
+) {
+    /**
+     * Processes job results messages produced by a worker replica. Inserts the
+     * run into the results database, and records any duplicate runs in a second
+     * catchall table. Runs are considered expensive, so we record the rare
+     * instance where pulsar double sends so it can be inspected later.
+     */
+    @PulsarListener(topics = ["results"], subscriptionName = "task-manager")
+    @Transactional
+    fun recordRun(raw: String) {
+        // Parse the message, silently swallow malformed message erorrs.
+        val msg = runCatching { json.readValue<JobMsg>(raw) }.getOrNull() ?: return
+
+        // Attempt to insert the result into the results database
+        val inserted = db.sql(
+            """
+            INSERT INTO run (run_id, task_id, program_id, result)
+            VALUES (:runId, :taskId, :programId, :result)
+            ON CONFLICT DO NOTHING
+            """
+        ).paramSource(msg).update()
+
+        // If the insert didn't run, this is a duplicate. record it.
+        if (inserted == 0) {
+            db.sql(
+                """
+                INSERT INTO duplicate_runs (run_id, task_id, program_id, result)
+                VALUES (:runId, :taskId, :programId, :result)
+                """
+            ).paramSource(msg).update()
+        }
+    }
+
+    /**
+     * Records all errors from the topic into the database. Will have an
+     * entry for each attempted run even if they are all simply rejected
+     * for being invalid and aborting run attempt.
+     */
+    @PulsarListener(topics = ["errors"], subscriptionName = "task-manager")
+    fun recordError(raw: String) {
+        // Parse the message, silently swallow malformed message erorrs.
+        val msg = runCatching { json.readValue<ErrorMsg>(raw) }.getOrNull() ?: return
+        db.sql(
+            """
+            INSERT INTO errors (run_id, task_id, message)
+            VALUES (:runId, :taskId, :message)
+            ON CONFLICT DO NOTHING
+            """
+        ).paramSource(msg).update()
+    }
+
+    /**
+     * Consumes the dead letter queue and records any messages that end up there
+     * into the database. This shouldn't really run, as workers already send an
+     * error when they see that a message is the last attempt.
+     *
+     * Need to handle conflicts since the worker could throw and send an error
+     * message on the last retry, leading to the dlq getting a message for the
+     * same run. This only occurs when the worker throws in a new way that
+     * causes it to send an error message, but also not ack the message.
+     */
+    @PulsarListener(
+        topics = ["persistent://public/default/runs-quantum-computer-DLQ"],
+        subscriptionName = "dlq"
+    )
+    fun drainDead(raw: ByteArray) {
+        val m = runCatching { json.readValue(raw, TaskMsg::class.java) }.getOrNull() ?: return
+        // On conflict prevents case where DLQ times out an a qc error for a non-dlq error
+        db.sql(
+            """
+            INSERT INTO errors (run_id, task_id, message)
+            VALUES (:runId, :taskId, 'Unknown run failure')
+            ON CONFLICT DO NOTHING
+            """
+        ).paramSource(m).update()
+    }
+
+    /**
+     * Runs on a schedule to drain the outbox table. This is required to tie
+     * message sending to an atomic operation so there is no risk of recording
+     * a request to the database without also sending to on a topic.
+     */
+    @Scheduled(fixedDelay = 100)
+    @Transactional
+    fun drainOutbox() {
+        // Load oldest messages in outbox
+        val msgs = db.sql(
+            """
+          SELECT run_id, task_id, program_id
+          FROM outbox
+          ORDER BY created_at
+          LIMIT 1000
+          FOR UPDATE SKIP LOCKED
+          """
+        ).query { rs, _ ->
+            TaskMsg(
+                rs.getObject("run_id", UUID::class.java),
+                rs.getLong("task_id"),
+                rs.getString("program_id"),
+            )
+        }.list()
+
+        if (msgs.isEmpty()) return
+        /**
+         * Using plain send() works but is slow, as it waits for ack before
+         * next message. sendAsync isn't safe without ensuring everything
+         * completes. A failed send throws and it just tries again on the
+         * schedule
+         */
+        val pending = msgs.map { msg -> pulsar.sendAsync(msg) }
+        pending.forEach { send -> send.join() }
+
+        db.sql("DELETE FROM outbox WHERE run_id IN (:ids)")
+            .param("ids", msgs.map { msg -> msg.runId })
+            .update()
+    }
+}
+
+
+/** Data classes only below */
 
 data class CreateTaskBody(
     @field:Pattern(regexp = "[A-Za-z0-9]{64}", message = "Invalid idemKey submitted")
@@ -421,5 +441,12 @@ data class JobMsg(
     val runId: UUID,
 )
 
+data class ErrorMsg(
+    val programId: String,
+    val taskId: Long,
+    val runId: UUID,
+    val message: String,
+)
 
-
+data class InsertResult(val taskId: Long, val existingProgramId: String?)
+data class Program(val programId: String, val commands: List<String>)
