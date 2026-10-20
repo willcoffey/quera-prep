@@ -28,6 +28,26 @@ https://github.com/gotson/komga
 https://github.com/Netflix/dgs-framework
 
 ---
+# Tue Oct 20 03:08:29 PM EDT 2026
+Running the podman dev setup kills my battery life and my laptop gets hot. CPU
+usage is low. Most likely culprit is interrupts created by pulsar client. 
+AI Summary:
+```
+Cause: the Pulsar Java client (4.2.4) creates a Netty HashedWheelTimer with a 
+hard-coded 1ms tick. A HashedWheelTimer ticks at a fixed rate whether or not 
+anything is scheduled, so each JVM's "pulsar-timer" thread wakes ~1,130 
+times/s. Measured: 4 such threads, one per quantum-computer replica, 
+~4,500 wakeups/s total. Fine on servers, bad on a laptop.
+
+Why it matters: CPUs only save real power in deep sleep states, which they 
+enter only when idle long enough. Constant 1ms wakeups keep cores in shallow, 
+power-hungry states. In a VM each wakeup also exits to the Mac's hypervisor 
+and QEMU, so the Mac never rests. It's wasted power, not an app performance 
+problem. Node avoids this: its event loop sleeps until the next timer is 
+actually due.
+```
+
+
 # Tue Oct 20 12:01:10 PM EDT 2026
 Surprised to find that Kotlin resolves classes with the same packagename
 so no import is needed. seems like magic. 
