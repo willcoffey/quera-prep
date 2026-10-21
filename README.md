@@ -6,6 +6,14 @@ database. A React frontend provides visualization of the quantum state as well
 as controls for submitting and fetching jobs. All containerized in a rootless
 Podman setup.
 
+The frontend can be viewed as a github page with no backend.
+[Frontend Only](https://willcoffey.github.io/quera-prep/)
+
+
+I also prototyped out a frontend only version, with QASM 2.0 strings, more 
+gates and controls.
+[qvis](https://qvis.wilcof.workers.dev/)
+
 # Setup
 Requires `podman` and `node` be installed.
 
@@ -61,9 +69,9 @@ watching and rebuilding on file change.
 I use Claude as my agent of choice, so I'm not sure how this setup would
 translate to other agents.
 
-The agent is initially sandboxed as read online, then given whitelisted 
-permissions to edit files that only matcht to `*.ai.*`. I find this very useful
-to prevent it from taking to much initiative and trashing the repo. It 
+The agent is initially sandboxed as read only, then given whitelisted 
+permissions to edit files that only match to `*.ai.*`. I find this very useful
+to prevent it from taking too much initiative and trashing the repo. It 
 additionally functions as a means of attribution.
 
 My expectation would be that once files settle and no longer need edits, they
