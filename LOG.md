@@ -1,33 +1,3 @@
-# Current Summary
-Waiting on getting a deadline to properly prioritize, but overdue to setup an
-outline for a final product.
-
-## Timeline
- - Saturday - half day, feature complete
- - Sunday - testing
- - Monday - code review, tidying and organization
- - Tuesday - half day, documentation, unknowns  
-
-## Readme
-Final rewrite of readme. Last thing to do.
-
-## Testing
-End to end test of rendered canvas. take the generated final image, turn it back
-into complex values, compare against same program on qc.ts
-
-Stress testing, fuzzing, tc netem
-
-Frontend, a11y
-
-## Review, Refactor, Styling
-I need to figure out what idiomatic kotlin looks like. file structure etc. as
-part of code review, I'll compare to existing codebases.
-
-https://github.com/tolgee/tolgee-platform
-https://github.com/gotson/komga
-https://github.com/Netflix/dgs-framework
-
----
 # Tue Oct 20 03:14:28 PM EDT 2026
 Time to triage. I'm not going to be getting a full code review in. Need to 
 get TaskManager to an acceptable state, then finish other tasks.
@@ -55,6 +25,9 @@ and QEMU, so the Mac never rests. It's wasted power, not an app performance
 problem. Node avoids this: its event loop sleeps until the next timer is 
 actually due.
 ```
+
+It's funny, I had a rough time with an interview question on hash wheel timer,
+and here it is getting me again.
 
 
 # Tue Oct 20 12:01:10 PM EDT 2026
