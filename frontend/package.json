@@ -2,9 +2,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsc --watch --preserveWatchOutput & vite --port 3000",
-    "build": "vite build",
-    "check": "tsc",
-    "build-gh": "vite build --base=./ --outDir ../docs --emptyOutDir && touch ../docs/.nojekyll"
+    "build": "vite build --base=./",
+    "check": "tsc"
   },
   "dependencies": {
     "lucide-react": "^1.54.0",
