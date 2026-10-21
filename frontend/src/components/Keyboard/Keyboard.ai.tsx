@@ -44,13 +44,15 @@ const SINGLE_QUBIT: Gate[] = [
 
 /** Controlled families: controls first, target(s) last, in selection
     order. Ids follow the simulator, one C per control: CNOT, CCNOT, …;
-    CZ, CCZ, …; CT, CCT, …; SWAP, CSWAP, … (SWAP has 2 targets, so it needs
-    no control). "⇄" is a single character, keeping "•⇄" to 2. */
-const FAMILIES = [
+    CZ, CCZ, …; CT, CCT, …; SWAP, CSWAP (SWAP has 2 targets, so it needs
+    no control). The simulator stops at CSWAP, hence maxQubits. "⇄" is a
+    single character, keeping "•⇄" to 2. */
+const FAMILIES: { symbol: string; name: string; targets: number;
+  suffix: string; selfInverse: boolean; maxQubits?: number }[] = [
   { symbol: "X", name: "X", targets: 1, suffix: "NOT", selfInverse: true },
   { symbol: "Z", name: "Z", targets: 1, suffix: "Z", selfInverse: true },
   { symbol: "T", name: "T", targets: 1, suffix: "T", selfInverse: false },
-  { symbol: "⇄", name: "swap", targets: 2, suffix: "SWAP", selfInverse: true },
+  { symbol: "⇄", name: "swap", targets: 2, suffix: "SWAP", selfInverse: true, maxQubits: 3 },
 ];
 
 /** Well known names, added to the tooltip */
@@ -71,7 +73,9 @@ function controlName(controls: number) {
 
 /** The family gates that take exactly n ≥ 2 qubits */
 function multiQubit(n: number): Gate[] {
-  return FAMILIES.filter((f) => n >= Math.max(2, f.targets)).map((f) => {
+  return FAMILIES.filter((f) =>
+    n >= Math.max(2, f.targets) && n <= (f.maxQubits ?? QUBITS.length)
+  ).map((f) => {
     const controls = n - f.targets;
     const id = "C".repeat(controls) + f.suffix;
     const name = controls ? controlName(controls) + f.name : "Swap";
