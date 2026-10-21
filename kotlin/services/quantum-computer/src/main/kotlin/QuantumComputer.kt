@@ -119,6 +119,12 @@ class QuantumComputer(
     /**
      * Subscribe to task events
      *
+     * @TODO - 2026-10-21
+     * Claude: pulsar.send blocks per run; batch listener + sendAsync, then 
+     * join and ack/nack per message.
+     * Stress test: ~850 runs/s on localhost, but 50ms broker latency drops 
+     * it to ~70 runs/s at any gate count.
+     *
      */
     @PulsarListener(
         topics = ["runs"],

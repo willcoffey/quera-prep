@@ -30,6 +30,9 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.readValue
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import org.springframework.jdbc.core.namedparam.SqlParameterSourceUtils
+
 
 @SpringBootApplication
 class TaskManager
@@ -218,6 +221,7 @@ class PulsarHandler(
     private val json: ObjectMapper,
     private val pulsar: PulsarTemplate<Any>,
     private val db: JdbcClient,
+    private val batch: NamedParameterJdbcTemplate,
 ) {
     /**
      * Processes job results messages produced by a worker replica. Inserts the
@@ -225,30 +229,31 @@ class PulsarHandler(
      * catchall table. Runs are considered expensive, so we record the rare
      * instance where pulsar double sends a job so it can be inspected later.
      */
-    @PulsarListener(topics = ["results"], subscriptionName = "task-manager")
+    @PulsarListener(topics = ["results"], subscriptionName = "task-manager", batch = true)
     @Transactional
-    fun recordRun(raw: String) {
-        // Parse the message, silently swallow malformed message erorrs.
-        val msg = runCatching { json.readValue<JobMsg>(raw) }.getOrNull() ?: return
+    fun recordRun(raws: List<String>) {
+        // Parse the messages, silently swallow malformed message erorrs.
+        val msgs = raws.mapNotNull { runCatching { json.readValue<JobMsg>(it) }.getOrNull() }
 
-        // Attempt to insert the result into the results database
-        val inserted = db.sql(
+        // Attempt to insert the whole batch into the results database
+        val inserted = batch.batchUpdate(
             """
             INSERT INTO run (run_id, task_id, program_id, result)
             VALUES (:runId, :taskId, :programId, :result)
             ON CONFLICT DO NOTHING
-            """
-        ).paramSource(msg).update()
+            """,
+            SqlParameterSourceUtils.createBatch(msgs)
+        )
 
-        // If the insert didn't run, this is a duplicate. record it.
-        if (inserted == 0) {
-            db.sql(
-                """
-                INSERT INTO duplicate_runs (run_id, task_id, program_id, result)
-                VALUES (:runId, :taskId, :programId, :result)
-                """
-            ).paramSource(msg).update()
-        }
+        // If an insert didn't run, it's a duplicate. record them.
+        val dupes = msgs.filterIndexed { i, _ -> inserted[i] == 0 }
+        batch.batchUpdate(
+            """
+            INSERT INTO duplicate_runs (run_id, task_id, program_id, result)
+            VALUES (:runId, :taskId, :programId, :result)
+            """,
+            SqlParameterSourceUtils.createBatch(dupes)
+        )
     }
 
     /**
