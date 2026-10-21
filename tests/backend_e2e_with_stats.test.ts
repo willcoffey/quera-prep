@@ -45,6 +45,10 @@ test(
     // Print the readable results to console
     printResults(stats, Date.now() - start);
 
+
+    // Verify we got the expected number of complete runs
+    completed.forEach(({ results }, i) => expect(results.length, `PROGRAM ${i + 1}`).toBe(RUNS));
+
     // Throw if stats is above the max error
     stats.forEach(({ maxError }, i) =>
       expect(maxError, `PROGRAM ${i + 1}`).toBeLessThanOrEqual(0.05)
