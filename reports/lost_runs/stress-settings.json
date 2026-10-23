@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(podman exec quera-mirror-postgres-1 psql -U postgres *)",
+      "Bash(podman exec quera-mirror-pulsar-1 bin/pulsar-admin topics *)",
+      "Bash(podman restart quera-mirror-task-manager-1)",
+      "Bash(podman kill quera-mirror-task-manager-1)",
+      "Bash(podman start quera-mirror-task-manager-1)",
+      "Bash(podman kill quera-mirror-quantum-computer-*)",
+      "Bash(podman start quera-mirror-quantum-computer-*)",
+      "Bash(podman inspect -f {{.State.Pid}} quera-mirror-*)",
+      "Bash(podman unshare nsenter -t * -n /usr/sbin/tc qdisc *)",
+      "Bash(podman kill quera-mirror-pulsar-1)",
+      "Bash(podman start quera-mirror-pulsar-1)",
+      "Bash(podman kill quera-mirror-postgres-1)",
+      "Bash(podman start quera-mirror-postgres-1)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(su *)",
+      "Bash(apt*)",
+      "Bash(dpkg *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(pnpm *)",
+      "Bash(yarn *)",
+      "Bash(bun *)",
+      "Bash(pip*)",
+      "Bash(uv *)",
+      "Bash(cargo install *)",
+      "Bash(go install *)",
+      "Bash(wget *)",
+      "Bash(podman pull *)",
+      "Bash(podman run *)",
+      "Bash(podman build *)"
+    ]
+  }
+}

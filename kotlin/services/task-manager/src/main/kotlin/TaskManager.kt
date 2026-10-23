@@ -1,5 +1,6 @@
 package taskmanager
 
+import org.apache.pulsar.client.api.SubscriptionType
 import jakarta.validation.Valid
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.NotBlank
@@ -229,7 +230,13 @@ class PulsarHandler(
      * catchall table. Runs are considered expensive, so we record the rare
      * instance where pulsar double sends a job so it can be inspected later.
      */
-    @PulsarListener(topics = ["results"], subscriptionName = "task-manager", batch = true)
+
+    @PulsarListener(
+        topics = ["results"],
+        subscriptionName = "task-manager",
+        subscriptionType = [SubscriptionType.Shared],
+        batch = true
+    )
     @Transactional
     fun recordRun(raws: List<String>) {
         // Parse the messages, silently swallow malformed message erorrs.
@@ -261,7 +268,11 @@ class PulsarHandler(
      * entry for each attempted run even if they are all simply rejected
      * for being invalid and aborting run attempt.
      */
-    @PulsarListener(topics = ["errors"], subscriptionName = "task-manager")
+    @PulsarListener(
+        topics = ["errors"],
+        subscriptionName = "task-manager",
+        subscriptionType = [SubscriptionType.Shared],
+    )
     fun recordError(raw: String) {
         // Parse the message, silently swallow malformed message erorrs.
         val msg = runCatching { json.readValue<ErrorMsg>(raw) }.getOrNull() ?: return
@@ -286,7 +297,8 @@ class PulsarHandler(
      */
     @PulsarListener(
         topics = ["persistent://public/default/runs-quantum-computer-DLQ"],
-        subscriptionName = "dlq"
+        subscriptionName = "dlq",
+        subscriptionType = [SubscriptionType.Shared],
     )
     fun drainDead(raw: ByteArray) {
         val m = runCatching { json.readValue(raw, TaskMsg::class.java) }.getOrNull() ?: return

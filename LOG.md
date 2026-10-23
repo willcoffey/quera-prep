@@ -1,3 +1,29 @@
+# Fri Oct 23 10:57:03 AM EDT 2026
+Replicated the lost runs via additional testing and believe I have the fix.
+
+Cause:
+The subscriptin type on the topic is not specified. So it defaults to an 
+exclusive subscription.
+
+On a batched consumer, if the subscription type is exclusive, it uses cumulative
+acks. This means, instead of sending per message acks, if it processed 10 
+messages it only sends 1 ack. It sends cumulative ack for message 10, implying
+messages 1-9 completed. This is for all messages in the topic, not restricted
+to just the batch.
+
+When postgres is killed, the batch it was processing gets nacked, and pulsar
+prepares to resend it later. Postgres comes back up, but the next messages
+that the task manager consumer receives is the batch after the batch that 
+failed. This batch processes fine, so spring sends a cumulative ack. This tells
+pulsar that those messages that failed earlier, and never got resent, have 
+been acked.
+
+Solution: Add `subscriptionType = [SubscriptionType.Shared]` to the results 
+consumer. This ensures each individual message gets its own ack.
+
+Also add the subscription type to other batched consumers that would have the
+same bug but it did't get revealed.
+
 # Tue Oct 20 03:14:28 PM EDT 2026
 Time to triage. I'm not going to be getting a full code review in. Need to 
 get TaskManager to an acceptable state, then finish other tasks.
